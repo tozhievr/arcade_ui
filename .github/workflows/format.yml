@@ -32,6 +32,10 @@ jobs:
       - name: Install clang-format 21
         run: |
           sudo apt-get update
+          sudo apt-get install -y wget gnupg ca-certificates
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm21.list
+          sudo apt-get update
           sudo apt-get install -y clang-format-21
       - name: Validate formatting
         run: python3 tools/clang-format-all.py --check --binary clang-format-21
@@ -49,6 +53,10 @@ jobs:
           persist-credentials: true
       - name: Install clang-format 21
         run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg ca-certificates
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm21.list
           sudo apt-get update
           sudo apt-get install -y clang-format-21
       - name: Format source and tests
