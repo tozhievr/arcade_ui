@@ -98,3 +98,26 @@ auto lines = arcade::ui::text::segment_visual_lines(
 Locally compiled and executed the new module and `tests/text_runs.cpp` using
 Clang 17 (`-std=c++2b`) and ICU. All 41 Python regression tests passed. The
 HarfBuzz/FreeType path and Clang 23 / CMake 4.5 have not been validated here.
+
+
+## v1.9 — Shaped Run Cache
+
+Added `src/arcade.ui.text.cache.cppm`, a standalone C++23 named module with
+`ShapedRunCache`, `ShapeKey`, `GlyphMetrics` and `GlyphRunView`.
+
+- Per-glyph **SoA** arrays (IDs, UTF-8 cluster offsets, advances, offsets) backed by `std::pmr`.
+- Exact UTF-8 text/key matching; no hash-only cache collisions.
+- LRU eviction bounded by entry count and glyph count; records exceeding budget are not cached.
+- Face generation and `invalidate_face(face_id)` prevent stale runs after font updates.
+- Shaper callback allows a HarfBuzz-backed producer, but this integration has **not yet been wired into `OpenType`**.
+- Returned spans are valid only until the next modifying cache operation. The cache is **not thread-safe**.
+- `tests/shaped_cache.cpp` tests hits, misses, eviction, generation changes, clear, and failure.
+
+This is infrastructure for storing shaped runs, **not** a complete shaping engine, font fallback,
+GPU atlas or a CSS Text conformance implementation. Cache capacity bounds glyph count, but
+not total bytes including source UTF-8 strings or vector overhead. The lookup is currently
+linear in the number of cached runs; profile before using at very large scales.
+
+Manual validation in this environment: Clang 17 `-std=c++2b` module precompile + link +
+execute the shaped-cache test; Python suite 41/41. Clang 23 / CMake 4.5 / HarfBuzz were
+not available for verification.
