@@ -1,0 +1,58 @@
+name: Verified numeric suffix cleanup
+
+on:
+  push:
+    branches: ['fix/clang-tidy-zero-warnings']
+    paths: ['.github/workflows/tidy-literals.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CC: clang-21
+      CXX: clang++-21
+      ARCADE_UI_TEST_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/clang-tidy-zero-warnings
+          persist-credentials: true
+      - name: Install native build and formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg ca-certificates ninja-build pkg-config libicu-dev libfreetype-dev libharfbuzz-dev fonts-dejavu-core
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm21.list
+          sudo apt-get update
+          sudo apt-get install -y clang-21 clang-format-21 lld-21
+          python3 -m pip install --break-system-packages 'cmake>=4.4,<5' tinycss2 cssselect2
+      - name: Apply safe mechanical fixes and formatting
+        run: |
+          python3 tools/fix-tidy-literals.py
+          python3 tools/clang-format-all.py --fix --binary clang-format-21
+          git diff --stat -- src tests
+      - name: Build all native modules and run CTest
+        shell: bash
+        run: |
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++-21 -DBUILD_TESTING=ON -DARCADE_UI_ENABLE_UNICODE=ON -DARCADE_UI_ENABLE_FONT_BACKEND=ON
+          cmake --build build/native --parallel 2
+          ctest --test-dir build/native --output-on-failure --parallel 2
+      - name: Commit validated source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- src tests
+          if git diff --cached --quiet; then
+            echo "No source edits needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(tidy): normalize literal suffixes and clang-format C++ files"
+          git push origin HEAD:fix/clang-tidy-zero-warnings
