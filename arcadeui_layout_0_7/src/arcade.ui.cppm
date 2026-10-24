@@ -35,6 +35,14 @@ export namespace arcade::ui {
     static_assert(sizeof(Node)==32);
     static_assert(sizeof(Style)==68);
 
+    struct LayoutStats {
+        std::uint32_t layout_visits{};
+        std::uint32_t layout_skips{};
+        std::uint32_t measure_computations{};
+        std::uint32_t measure_cache_hits{};
+        std::uint32_t painted_commands{};
+    };
+
     class Document {
         std::pmr::vector<std::byte> bytes_;
         std::pmr::vector<Node> nodes_;
@@ -42,6 +50,17 @@ export namespace arcade::ui {
         std::pmr::vector<Rect> rectangles_;
         std::pmr::vector<DrawCommand> commands_;
         std::pmr::unordered_map<std::string, Callback> callbacks_;
+        // Dirtiness is a compact layout dependency graph: parent indices encode
+        // upward intrinsic-size dependencies, while contiguous child ranges
+        // preserve the source-order layout dependency graph.
+        // bit 0: subtree needs arranging; bit 1: node's own style changed.
+        std::pmr::vector<std::uint8_t> dirty_;
+        std::pmr::vector<float> measured_width_;
+        std::pmr::vector<float> measured_height_;
+        std::pmr::vector<std::uint8_t> measure_valid_;
+        LayoutStats stats_{};
+        bool laid_out_{};
+        bool paint_dirty_{true};
         std::uint32_t strings_start_{}, strings_size_{};
         float viewport_width_{}, viewport_height_{};
         static std::uint32_t u32(const std::byte* p) noexcept {
@@ -55,13 +74,25 @@ export namespace arcade::ui {
             if (off>strings_size_ || len>strings_size_-off) throw std::runtime_error("Invalid string offset");
             return {reinterpret_cast<const char*>(bytes_.data()+strings_start_+off),len};
         }
-        [[nodiscard]] float measure(std::uint32_t id,bool horizontal) const {
+        [[nodiscard]] float measure(std::uint32_t id,bool horizontal) {
+            const auto bit=horizontal?std::uint8_t{1}:std::uint8_t{2};
+            if(measure_valid_[id]&bit){++stats_.measure_cache_hits;return horizontal?measured_width_[id]:measured_height_[id];}
+            ++stats_.measure_computations;
             const auto& n=nodes_[id];const auto& s=styles_[n.style];
-            if (s.display==3) return 0;
+            if (s.display==3) { measure_valid_[id]|=bit; return 0; }
             const float fixed=horizontal?s.width:s.height;
-            if (fixed>=0)return fixed;
+            if (fixed>=0) {
+                (horizontal?measured_width_[id]:measured_height_[id])=fixed;
+                measure_valid_[id]|=bit;
+                return fixed;
+            }
             const float pad=s.padding*2;
-            if (!n.child_count)return pad+(horizontal?float(n.text_size)*s.font_size*0.58f:s.font_size*1.3f);
+            if (!n.child_count){
+                const auto value=pad+(horizontal?float(n.text_size)*s.font_size*0.58f:s.font_size*1.3f);
+                (horizontal?measured_width_[id]:measured_height_[id])=value;
+                measure_valid_[id]|=bit;
+                return value;
+            }
             float result=0;
             const bool main=(s.display==1 && ((s.direction==0)==horizontal));
             if (main) {
@@ -70,10 +101,21 @@ export namespace arcade::ui {
             } else {
                 for(std::uint32_t i=0;i<n.child_count;++i)result=std::max(result,measure(n.first_child+i,horizontal)+styles_[nodes_[n.first_child+i].style].margin*2);
             }
-            return result+pad;
+            result+=pad;
+            (horizontal?measured_width_[id]:measured_height_[id])=result;
+            measure_valid_[id]|=bit;
+            return result;
         }
         void layout(std::uint32_t id,Rect area) {
+            const auto previous=rectangles_[id];
+            const bool changed=!laid_out_ || previous.x!=area.x || previous.y!=area.y ||
+                previous.width!=area.width || previous.height!=area.height;
+            if(!changed && !dirty_[id]) {++stats_.layout_skips;return;}
+            ++stats_.layout_visits;
             rectangles_[id]=area;
+            // Reset this node before descendants; propagate a geometry change
+            // to the children even when their local styles are unchanged.
+            dirty_[id]=0;
             const auto& n=nodes_[id];const auto& s=styles_[n.style];
             if(s.display==3 || !n.child_count)return;
             const float pad=s.padding;
@@ -157,14 +199,29 @@ export namespace arcade::ui {
             }
         }
         void render() {
+            if(!paint_dirty_)return;
             commands_.clear();
             for(std::size_t i=0;i<nodes_.size();++i){auto& n=nodes_[i];auto& s=styles_[n.style];if(s.display==3)continue;
                 bool hidden=false;auto ancestor=n.parent;while(ancestor!=0xffffffff){if(styles_[nodes_[ancestor].style].display==3){hidden=true;break;}ancestor=nodes_[ancestor].parent;}if(hidden)continue;
                 commands_.push_back({rectangles_[i],s.background,text(n.text_offset,n.text_size),s.foreground,s.font_size});
             }
+            stats_.painted_commands=static_cast<std::uint32_t>(commands_.size());
+            paint_dirty_=false;
+        }
+        void mark_layout_dirty(std::uint32_t id) {
+            if(id>=nodes_.size())throw std::out_of_range("Invalid node ID");
+            // A change in one child can affect all its flex/grid siblings,
+            // but only its ancestors need marking: arrange recomputes
+            // sibling positions and unchanged children are skipped.
+            while(id!=0xffffffffu){
+                dirty_[id]|=1;
+                measure_valid_[id]=0;
+                id=nodes_[id].parent;
+            }
+            paint_dirty_=true;
         }
     public:
-        explicit Document(std::pmr::memory_resource* memory=std::pmr::get_default_resource()):bytes_(memory),nodes_(memory),styles_(memory),rectangles_(memory),commands_(memory),callbacks_(memory){}
+        explicit Document(std::pmr::memory_resource* memory=std::pmr::get_default_resource()):bytes_(memory),nodes_(memory),styles_(memory),rectangles_(memory),commands_(memory),callbacks_(memory),dirty_(memory),measured_width_(memory),measured_height_(memory),measure_valid_(memory){}
         [[nodiscard]] static Document load(const std::string& path,std::pmr::memory_resource* memory=std::pmr::get_default_resource()){
             Document result(memory);std::ifstream stream(path,std::ios::binary|std::ios::ate);
             if(!stream)throw std::runtime_error("Cannot open arcuxi");auto end=stream.tellg();if(end<72 || end>std::streamoff(256*1024*1024))throw std::runtime_error("Invalid image size");
@@ -186,10 +243,47 @@ export namespace arcade::ui {
                 s.display=u32(x);s.direction=u32(x+4);s.width=f32(x+8);s.height=f32(x+12);s.grow=f32(x+16);s.shrink=f32(x+20);s.gap=f32(x+24);s.padding=f32(x+28);s.margin=f32(x+32);s.font_size=f32(x+36);s.background=u32(x+40);s.foreground=u32(x+44);s.flags=u32(x+48);s.justify=u32(x+52);s.align=u32(x+56);s.wrap=u32(x+60);s.grid_columns=u32(x+64);
                 if(s.display>3||s.direction>1||s.justify>3||s.align>3||s.wrap>1||s.grid_columns>4096)throw std::runtime_error("Invalid style");result.styles_.push_back(s);
             }
-            result.rectangles_.resize(count);return result;
+            result.rectangles_.resize(count);
+            result.dirty_.assign(count,1);
+            result.measured_width_.assign(count,0.f);
+            result.measured_height_.assign(count,0.f);
+            result.measure_valid_.assign(count,0);
+            return result;
         }
-        void resize(float w,float h){if(!std::isfinite(w)||!std::isfinite(h)||w<0||h<0)throw std::invalid_argument("Invalid viewport");viewport_width_=w;viewport_height_=h;
-            if(nodes_.empty())return;const auto& root=styles_[nodes_[0].style];layout(0,{0,0,root.width>=0?root.width:w,root.height>=0?root.height:h});render();}
+        void resize(float w,float h){
+            if(!std::isfinite(w)||!std::isfinite(h)||w<0||h<0)throw std::invalid_argument("Invalid viewport");
+            stats_={};
+            const bool viewport_changed=viewport_width_!=w || viewport_height_!=h;
+            viewport_width_=w;viewport_height_=h;
+            if(nodes_.empty())return;
+            if(viewport_changed){
+                // Viewport-related percentage rules will require more granular
+                // tracking when the supported CSS profile is expanded.
+                dirty_[0]|=1;
+                paint_dirty_=true;
+            }
+            const auto& root=styles_[nodes_[0].style];
+            layout(0,{0,0,root.width>=0?root.width:w,root.height>=0?root.height:h});
+            laid_out_=true;
+            render();
+        }
+        void invalidate(std::uint32_t id){mark_layout_dirty(id);}
+        void set_size(std::uint32_t id,float width,float height){
+            if(id>=nodes_.size())throw std::out_of_range("Invalid node ID");
+            if((width<0 && width!=-1) || (height<0 && height!=-1) || !std::isfinite(width) || !std::isfinite(height))
+                throw std::invalid_argument("Invalid dimensions");
+            auto& style=styles_[nodes_[id].style];
+            if(style.width==width && style.height==height)return;
+            style.width=width;style.height=height;
+            mark_layout_dirty(id);
+        }
+        void set_background(std::uint32_t id,std::uint32_t rgba){
+            if(id>=nodes_.size())throw std::out_of_range("Invalid node ID");
+            auto& style=styles_[nodes_[id].style];
+            if(style.background==rgba)return;
+            style.background=rgba;paint_dirty_=true;
+        }
+        [[nodiscard]] LayoutStats layout_stats() const noexcept{return stats_;}
         void write_svg(std::ostream& out) const {
             out << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " << viewport_width_ << ' ' << viewport_height_ << "\">\n";
             for(const auto& cmd:commands_) {
