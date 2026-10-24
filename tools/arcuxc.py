@@ -16,11 +16,39 @@ import sys
 MAGIC = b'ARCUXI\x00\x01'
 HEADER = struct.Struct('<8sIIIIIIII32s')
 NODE = struct.Struct('<IIIIIIII')
-STYLE = struct.Struct('<II8fIII4I')
+STYLE = struct.Struct('<II8fIII4I3fIII')
+TRACK = struct.Struct('<If')  # 0: fixed px, 1: fr, 2: minmax(px, 1fr)
 # node: parent,first_child,child_count,style,text_offset,text_len,event_offset,event_len
 # style: display, direction, width,height,grow,shrink,gap,padding,margin,font_size,background,text_color,flags
 COLORS={'black':0xff000000,'white':0xffffffff,'transparent':0x00000000,'red':0xffff0000,'blue':0xff0000ff,'green':0xff008000,'gray':0xff808080,'grey':0xff808080,'purple':0xff800080,'navy':0xff000080}
-PROPS=['display','flex-direction','width','height','flex-grow','flex-shrink','gap','padding','margin','font-size','background','color','justify-content','align-items','flex-wrap','grid-template-columns']
+PROPS=['display','flex-direction','width','height','flex-grow','flex-shrink','gap','padding','margin','font-size','background','color','justify-content','align-items','flex-wrap','grid-template-columns','flex-basis','min-width','max-width','grid-column']
+
+def parse_tracks(source):
+    """A deliberately bounded track grammar; tokenization is CSS-aware."""
+    def parse_one(token):
+        t=tinycss2.serialize([token]).strip().lower()
+        if re.fullmatch(r'(?:\d+(?:\.\d*)?|\.\d+)fr',t):
+            return (1,float(t[:-2]))
+        if re.fullmatch(r'(?:\d+(?:\.\d*)?|\.\d+)px',t):
+            return (0,float(t[:-2]))
+        m=re.fullmatch(r'minmax\(\s*(\d+(?:\.\d*)?)px\s*,\s*1fr\s*\)',t)
+        if m:return (2,float(m.group(1)))
+        raise ValueError('Unsupported grid track: '+t)
+    tokens=[t for t in tinycss2.parse_component_value_list(source) if t.type not in ('whitespace','comment')]
+    tracks=[]
+    for token in tokens:
+        if token.type=='function' and token.lower_name=='repeat':
+            parts=tinycss2.serialize(token.arguments).split(',',1)
+            if len(parts)!=2 or not re.fullmatch(r'\s*[1-9]\d*\s*',parts[0]):
+                raise ValueError('repeat() requires a positive integer and one track')
+            number=int(parts[0])
+            if number>4096:raise ValueError('Too many grid tracks')
+            piece=parse_tracks(parts[1])
+            if len(piece)!=1:raise ValueError('repeat() supports one track per repetition')
+            tracks.extend(piece*number)
+        else:tracks.append(parse_one(token))
+    if not 1<=len(tracks)<=4096:raise ValueError('Grid track count must be 1..4096')
+    return tracks
 
 def color(s):
     s=s.strip().lower()
@@ -242,7 +270,7 @@ def compile_ui(source,asset_root,diagnostic_source=None):
     for idx in queue:
         order.append(idx);queue.extend(parser.nodes[idx]['children'])
     mapping={old:new for new,old in enumerate(order)}
-    strings=bytearray();entries=[];styles=[]
+    strings=bytearray();entries=[];styles=[];tracks_blob=bytearray()
     def intern(s):
         data=s.encode('utf-8');o=len(strings);strings.extend(data);return o,len(data)
     for old in order:
@@ -305,22 +333,38 @@ def compile_ui(source,asset_root,diagnostic_source=None):
         align=choice('align-items',{'stretch':0,'flex-start':1,'start':1,'center':2,'flex-end':3,'end':3},'stretch')
         wrap=choice('flex-wrap',{'nowrap':0,'wrap':1},'nowrap')
         gridcols=0
+        own_tracks=[]
         if 'grid-template-columns' in decl:
             raw=decl['grid-template-columns'].strip()
-            match=re.fullmatch(r'repeat\(\s*([1-9]\d*)\s*,\s*1fr\s*\)',raw)
-            tokens=raw.split()
-            if match:gridcols=int(match.group(1))
-            elif tokens and all(t=='1fr' for t in tokens):gridcols=len(tokens)
-            if not 1<=gridcols<=4096:
-                diag.fail('AUX-CSS-110','Unsupported grid-template-columns: '+raw,
-                          locations.get('grid-template-columns',n['span']),
-                          'Current layout profile supports: 1fr 1fr ... or repeat(N, 1fr), N <= 4096.')
-                gridcols=0
+            try:
+                own_tracks=parse_tracks(raw)
+                gridcols=len(own_tracks)
+            except ValueError as exc:
+                diag.fail('AUX-CSS-110','grid-template-columns: '+str(exc),locations.get('grid-template-columns',n['span']),
+                          'Supported: px, fr, minmax(px, 1fr), and repeat(N, track).')
+        if display==2 and not own_tracks:
+            own_tracks=[(1,1.0)]
+            gridcols=1
+        track_offset=len(tracks_blob)//TRACK.size
+        for kind,value in own_tracks:tracks_blob.extend(TRACK.pack(kind,value))
+        span=1
+        if 'grid-column' in decl:
+            m=re.fullmatch(r'span\s+([1-9]\d*)',decl['grid-column'].strip())
+            if m:span=int(m.group(1))
+            else:diag.fail('AUX-CSS-113','Only grid-column: span N is supported',locations['grid-column'])
+        if span>4096:
+            diag.fail('AUX-CSS-113','Grid span exceeds 4096',locations['grid-column'])
+            span=1
+        basis=number('flex-basis',-1)
+        minimum=number('min-width',-1)
+        maximum=number('max-width',-1)
+        if minimum>=0 and maximum>=0 and minimum>maximum:
+            diag.fail('AUX-CSS-114','min-width exceeds max-width',locations.get('max-width',n['span']))
         if 'grid-template-columns' in decl and display!=2:
             diag.fail('AUX-CSS-111','grid-template-columns requires display: grid',locations['grid-template-columns'])
         if wrap and display!=1:
             diag.fail('AUX-CSS-112','flex-wrap requires display: flex',locations['flex-wrap'])
-        styles.append(STYLE.pack(display,direction,*values,bg,fg,0,justify,align,wrap,gridcols))
+        styles.append(STYLE.pack(display,direction,*values,bg,fg,0,justify,align,wrap,gridcols,basis,minimum,maximum,track_offset,span,gridcols))
         to,tl=intern(n['text']);ev=a.get('data-action','');eo,el=intern(ev)
         kids=n['children'];first=mapping[kids[0]] if kids else 0xffffffff
         entries.append(NODE.pack(mapping[n['parent']] if n['parent']!=0xffffffff else 0xffffffff,first,len(kids),len(styles)-1,to,tl,eo,el))
@@ -339,9 +383,9 @@ def compile_ui(source,asset_root,diagnostic_source=None):
         try:data=path.read_bytes()
         except OSError as exc:diag.fail('AUX-ASSET-102','Could not read asset: '+src,n['span'],str(exc))
         name=src.encode('utf8');assets.extend(struct.pack('<II',len(name),len(data)));assets.extend(name);assets.extend(data)
-    payload=nodes_blob+styles_blob+strings+assets
+    payload=nodes_blob+styles_blob+tracks_blob+strings+assets
     digest=hashlib.sha256(payload).digest()
-    header=HEADER.pack(MAGIC,2,len(entries),len(nodes_blob),len(styles_blob),len(strings),len(assets),0,0,digest)
+    header=HEADER.pack(MAGIC,3,len(entries),len(nodes_blob),len(styles_blob),len(strings),len(assets),len(tracks_blob),0,digest)
     return header+payload
 
 def main():
