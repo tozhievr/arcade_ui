@@ -80,7 +80,6 @@ namespace arcade::ui::text {
             output.lines.push_back(std::move(current));
             current = Line {};
             visible.clear();
-            previous_space = false;
         };
         auto add = [&](std::uint32_t a, std::uint32_t b, std::string_view display) {
             if (a == b)

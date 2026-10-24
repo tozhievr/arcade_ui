@@ -40,7 +40,7 @@ WarningsAsErrors: >-
   bugprone-use-after-move,
   bugprone-dangling-handle,
   bugprone-undefined-memory-manipulation
-HeaderFilterRegex: '.*[/\\](modules|apps|game|tools|tests|benchmarks)[/\\].*'
+HeaderFilterRegex: '.*[/\\](src|tests)[/\\].*'
 ExcludeHeaderFilterRegex: '.*[/\\](external|third_party|_deps|build|out)[/\\].*'
 SystemHeaders: false
 FormatStyle: file
@@ -57,21 +57,3 @@ CheckOptions:
     value: 'true'
   - key: bugprone-narrowing-conversions.WarnOnIntegerToFloatingPointNarrowingConversion
     value: 'true'
-# These query-based checks are dormant in production unless the driver receives
-# --experimental-custom-checks and enables 'custom-*'.
-CustomChecks:
-  - Name: no-explicit-delete
-    Query: |
-      match cxxDeleteExpr().bind("manual_delete")
-    Diagnostic:
-      - BindName: manual_delete
-        Message: 'Arcade prefers RAII; review manual delete and ownership boundaries'
-        Level: Warning
-  - Name: review-explicit-new
-    Query: |
-      match cxxNewExpr().bind("manual_new")
-    Diagnostic:
-      - BindName: manual_new
-        Message: 'Review explicit new; prefer a scoped owner or a dedicated allocator'
-        Level: Warning
-...

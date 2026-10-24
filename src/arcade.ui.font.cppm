@@ -86,10 +86,10 @@ namespace arcade::ui::font {
         void size(float px) {
             if (!std::isfinite(px) || px <= 0 || px > 4096)
                 throw std::invalid_argument("Invalid font size");
-            if (FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(std::max(1.f, std::round(px)))))
+            if (FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(std::max(1.F, std::round(px)))))
                 throw std::runtime_error("Cannot set font pixel size");
             hb_ft_font_changed(font);
-            pixel_size_64 = static_cast<std::uint32_t>(std::round(px)) * 64u;
+            pixel_size_64 = static_cast<std::uint32_t>(std::round(px)) * 64U;
         }
         static bool shape_callback(void* context,
                                    std::string_view input,
@@ -119,10 +119,10 @@ namespace arcade::ui::font {
                 for (unsigned i = 0; i < count; ++i) {
                     glyphs.push_back({info[i].codepoint,
                                       info[i].cluster,
-                                      static_cast<float>(pos[i].x_advance) / 64.f,
-                                      static_cast<float>(pos[i].y_advance) / 64.f,
-                                      static_cast<float>(pos[i].x_offset) / 64.f,
-                                      static_cast<float>(pos[i].y_offset) / 64.f});
+                                      static_cast<float>(pos[i].x_advance) / 64.F,
+                                      static_cast<float>(pos[i].y_advance) / 64.F,
+                                      static_cast<float>(pos[i].x_offset) / 64.F,
+                                      static_cast<float>(pos[i].y_offset) / 64.F});
                 }
                 return true;
             } catch (...) {
@@ -142,10 +142,10 @@ namespace arcade::ui::font {
             const auto result = shaped(t);
             if (!result)
                 throw std::runtime_error("OpenType shaping failed");
-            return std::max(0.f, result->total_advance);
+            return std::max(0.F, result->total_advance);
         }
         float line_height() const {
-            return std::max(1.f, static_cast<float>(face->size->metrics.height) / 64.f);
+            return std::max(1.F, static_cast<float>(face->size->metrics.height) / 64.F);
         }
     };
     OpenType::OpenType(std::string_view file_path) : state_(std::make_unique<State>(file_path)) {}
@@ -246,7 +246,7 @@ namespace arcade::ui::font {
             }
             auto word = t.substr(begin, end - begin);
             const float word_width = state_->advance(word);
-            const float space = used > 0 ? state_->advance(" ") : 0.f;
+            const float space = used > 0 ? state_->advance(" ") : 0.F;
             if (used > 0 && used + space + word_width > available) {
                 maximum = std::max(maximum, used);
                 used = 0;

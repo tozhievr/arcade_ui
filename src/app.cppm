@@ -81,8 +81,8 @@ export namespace arcade::ui {
         std::string source_;
         std::optional<D> renderer_;
         std::pmr::memory_resource* resource_ = std::pmr::get_default_resource();
-        float width_ = 960.f;
-        float height_ = 540.f;
+        float width_ = 960.F;
+        float height_ = 540.F;
 
     public:
         AppBuilder() = default;

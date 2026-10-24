@@ -118,7 +118,7 @@ export namespace arcade::ui {
                 w = std::max(w, s.min_width);
             if (s.max_width >= 0)
                 w = std::min(w, s.max_width);
-            return std::max(0.f, w);
+            return std::max(0.F, w);
         }
         [[nodiscard]] float flex_basis(std::uint32_t id, bool horizontal) {
             const auto& s = styles_[nodes_[id].style];
@@ -144,7 +144,7 @@ export namespace arcade::ui {
         // U+FFFD; the AOT compiler is expected to supply valid UTF-8.
         [[nodiscard]] static TextIntrinsic approximate_text(std::string_view input,
                                                             float size) noexcept {
-            float line = 0.f, longest_line = 0.f, word = 0.f, longest_word = 0.f;
+            float line = 0.F, longest_line = 0.F, word = 0.F, longest_word = 0.F;
             for (std::size_t i = 0; i < input.size();) {
                 const auto lead = static_cast<unsigned char>(input[i]);
                 std::uint32_t cp = 0xfffd;
@@ -158,20 +158,20 @@ export namespace arcade::ui {
                                                                              : 1;
                     if (count > 1 && i + count <= input.size()) {
                         bool valid = true;
-                        std::uint32_t v = lead & (0x7fu >> count);
+                        std::uint32_t v = lead & (0x7fU >> count);
                         for (std::size_t k = 1; k < count; ++k) {
                             const auto c = static_cast<unsigned char>(input[i + k]);
-                            if ((c & 0xc0u) != 0x80u) {
+                            if ((c & 0xc0U) != 0x80U) {
                                 valid = false;
                                 break;
                             }
-                            v = (v << 6) | (c & 0x3fu);
+                            v = (v << 6) | (c & 0x3fU);
                         }
                         if (valid &&
-                            v >= (count == 2   ? 0x80u
-                                  : count == 3 ? 0x800u
-                                               : 0x10000u) &&
-                            v <= 0x10ffffu && !(v >= 0xd800u && v <= 0xdfffu)) {
+                            v >= (count == 2   ? 0x80U
+                                  : count == 3 ? 0x800U
+                                               : 0x10000U) &&
+                            v <= 0x10ffffU && !(v >= 0xd800U && v <= 0xdfffU)) {
                             cp = v;
                             width = count;
                         }
@@ -192,7 +192,7 @@ export namespace arcade::ui {
                     (cp >= 0x1100 && cp <= 0x11ff) || (cp >= 0x2e80 && cp <= 0xa4cf) ||
                     (cp >= 0xac00 && cp <= 0xd7ff) || (cp >= 0xf900 && cp <= 0xfaff) ||
                     (cp >= 0x1f300 && cp <= 0x1faff);
-                const float advance = combining ? 0.f : size * (wide ? 1.f : space ? 0.33f : 0.58f);
+                const float advance = combining ? 0.F : size * (wide ? 1.F : space ? 0.33F : 0.58F);
                 line += advance;
                 if (space) {
                     longest_word = std::max(longest_word, word);
@@ -200,17 +200,17 @@ export namespace arcade::ui {
                 } else
                     word += advance;
             }
-            return {std::max(longest_word, word), std::max(longest_line, line), size * 1.3f};
+            return {std::max(longest_word, word), std::max(longest_line, line), size * 1.3F};
         }
         [[nodiscard]] static TextLineLayout approximate_lines(TextIntrinsic m,
                                                               float width) noexcept {
             // Fallback: no glyph data, so this is an approximate line count.
             // Prefer external shaping + UAX#14 breaker for production text.
-            const float usable = std::max(1.f, width);
-            if (m.max_content <= 0.f)
-                return {0.f, m.line_height, 1};
+            const float usable = std::max(1.F, width);
+            if (m.max_content <= 0.F)
+                return {0.F, m.line_height, 1};
             const auto lines = static_cast<std::uint32_t>(
-                std::clamp(std::ceil(m.max_content / usable), 1.f, 65535.f));
+                std::clamp(std::ceil(m.max_content / usable), 1.F, 65535.F));
             return {
                 std::min(m.max_content, usable), m.line_height * static_cast<float>(lines), lines};
         }
@@ -237,17 +237,17 @@ export namespace arcade::ui {
         [[nodiscard]] float constrained_height(std::uint32_t id, float outer_width) {
             const auto& n = nodes_[id];
             const auto& s = styles_[n.style];
-            if (n.child_count || n.text_size == 0 || s.height >= 0.f)
+            if (n.child_count || n.text_size == 0 || s.height >= 0.F)
                 return measure(id, false);
-            const float inline_size = std::max(0.f, outer_width - 2.f * s.padding);
+            const float inline_size = std::max(0.F, outer_width - 2.F * s.padding);
             const auto str = text(n.text_offset, n.text_size);
             auto lines = line_measurer_
                              ? line_measurer_(line_measurer_context_, str, s.font_size, inline_size)
                              : approximate_lines(text_intrinsic(id), inline_size);
             if (!std::isfinite(lines.width) || !std::isfinite(lines.height) || lines.width < 0 ||
-                lines.height <= 0 || lines.width > inline_size + 0.01f || lines.line_count == 0)
+                lines.height <= 0 || lines.width > inline_size + 0.01F || lines.line_count == 0)
                 throw std::runtime_error("Invalid line metrics during layout");
-            return lines.height + 2.f * s.padding;
+            return lines.height + 2.F * s.padding;
         }
         [[nodiscard]] float measure(std::uint32_t id, bool horizontal) {
             const auto bit = horizontal ? std::uint8_t {1} : std::uint8_t {2};
@@ -312,32 +312,32 @@ export namespace arcade::ui {
             if (s.display == 3 || !n.child_count)
                 return;
             const float pad = s.padding;
-            const float innerw = std::max(0.f, area.width - 2 * pad),
-                        innerh = std::max(0.f, area.height - 2 * pad);
+            const float innerw = std::max(0.F, area.width - 2 * pad),
+                        innerh = std::max(0.F, area.height - 2 * pad);
             if (s.display == 2) {
-                const auto columns = std::max(1u, s.grid_columns);
-                std::vector<float> widths(columns, 0.f);
-                float available = std::max(0.f, innerw - s.gap * float(columns - 1));
-                std::vector<float> weights(columns, 0.f);
+                const auto columns = std::max(1U, s.grid_columns);
+                std::vector<float> widths(columns, 0.F);
+                float available = std::max(0.F, innerw - s.gap * float(columns - 1));
+                std::vector<float> weights(columns, 0.F);
                 std::vector<std::uint8_t> flexible(columns, 0);
-                float weight_sum = 0.f;
+                float weight_sum = 0.F;
                 for (std::uint32_t col = 0; col < columns; ++col) {
                     const auto& t = tracks_[s.track_offset + col];
                     if (t.kind == 0) {
                         widths[col] = t.value;
                         available -= t.value;
                     } else {
-                        widths[col] = t.kind == 2 ? t.value : 0.f;
-                        weights[col] = t.kind == 1 ? t.value : 1.f;
+                        widths[col] = t.kind == 2 ? t.value : 0.F;
+                        weights[col] = t.kind == 1 ? t.value : 1.F;
                         flexible[col] = 1;
                         weight_sum += weights[col];
                     }
                 }
                 // Resolve fractional tracks with minmax() lower bounds.
                 // Freeze tracks whose minimum exceeds the current fraction unit.
-                for (std::uint32_t iteration = 0; iteration < columns && weight_sum > 0.f;
+                for (std::uint32_t iteration = 0; iteration < columns && weight_sum > 0.F;
                      ++iteration) {
-                    const float unit = std::max(0.f, available) / weight_sum;
+                    const float unit = std::max(0.F, available) / weight_sum;
                     bool frozen = false;
                     for (std::uint32_t col = 0; col < columns; ++col) {
                         if (flexible[col] && widths[col] > unit * weights[col]) {
@@ -350,7 +350,7 @@ export namespace arcade::ui {
                     if (!frozen)
                         break;
                 }
-                const float unit = weight_sum > 0.f ? std::max(0.f, available) / weight_sum : 0.f;
+                const float unit = weight_sum > 0.F ? std::max(0.F, available) / weight_sum : 0.F;
                 for (std::uint32_t col = 0; col < columns; ++col) {
                     if (flexible[col])
                         widths[col] = unit * weights[col];
@@ -375,7 +375,7 @@ export namespace arcade::ui {
                         layout(child, {});
                         continue;
                     }
-                    const auto span = std::min(columns, std::max(1u, cs.grid_span));
+                    const auto span = std::min(columns, std::max(1U, cs.grid_span));
                     if (col + span > columns) {
                         ++row;
                         col = 0;
@@ -390,15 +390,15 @@ export namespace arcade::ui {
                 std::uint32_t row_count = 0;
                 for (const auto& p : placements)
                     row_count = std::max(row_count, p.row + 1);
-                std::vector<float> heights(row_count, 0.f), ys(row_count, area.y + pad);
+                std::vector<float> heights(row_count, 0.F), ys(row_count, area.y + pad);
                 for (const auto& p : placements) {
                     const auto& cs = styles_[nodes_[p.child].style];
-                    float assigned = 0.f;
+                    float assigned = 0.F;
                     for (std::uint32_t c = p.col; c < p.col + p.span; ++c)
                         assigned += widths[c];
                     assigned += s.gap * float(p.span - 1);
                     assigned = clamp_width(
-                        cs.width >= 0 ? cs.width : std::max(0.f, assigned - 2 * cs.margin), cs);
+                        cs.width >= 0 ? cs.width : std::max(0.F, assigned - 2 * cs.margin), cs);
                     heights[p.row] = std::max(
                         heights[p.row], constrained_height(p.child, assigned) + 2 * cs.margin);
                 }
@@ -406,15 +406,15 @@ export namespace arcade::ui {
                     ys[r] = ys[r - 1] + heights[r - 1] + s.gap;
                 for (const auto& p : placements) {
                     const auto& cs = styles_[nodes_[p.child].style];
-                    float width = 0.f;
+                    float width = 0.F;
                     for (std::uint32_t c = p.col; c < p.col + p.span; ++c)
                         width += widths[c];
                     width += s.gap * float(p.span - 1);
-                    const auto available_width = std::max(0.f, width - 2 * cs.margin);
+                    const auto available_width = std::max(0.F, width - 2 * cs.margin);
                     const auto child_width =
                         clamp_width(cs.width >= 0 ? cs.width : available_width, cs);
                     const auto child_height =
-                        cs.height >= 0 ? cs.height : std::max(0.f, heights[p.row] - 2 * cs.margin);
+                        cs.height >= 0 ? cs.height : std::max(0.F, heights[p.row] - 2 * cs.margin);
                     layout(p.child,
                            {starts[p.col] + cs.margin,
                             ys[p.row] + cs.margin,
@@ -427,10 +427,10 @@ export namespace arcade::ui {
             const float available = horizontal ? innerw : innerh;
             // A flex line is computed as a contiguous interval, preserving source order.
             std::uint32_t begin = 0;
-            float cross_cursor = 0.f;
+            float cross_cursor = 0.F;
             while (begin < n.child_count) {
                 std::uint32_t end = begin;
-                float basis = 0.f, line_cross = 0.f;
+                float basis = 0.F, line_cross = 0.F;
                 while (end < n.child_count) {
                     const auto child = n.first_child + end;
                     const auto& cs = styles_[nodes_[child].style];
@@ -440,7 +440,7 @@ export namespace arcade::ui {
                     }
                     const float b = flex_basis(child, horizontal);
                     const float outer = b + cs.margin * 2;
-                    const float needed = outer + (end > begin ? s.gap : 0.f);
+                    const float needed = outer + (end > begin ? s.gap : 0.F);
                     if (s.wrap && end > begin && basis + needed > available)
                         break;
                     basis += needed;
@@ -472,30 +472,30 @@ export namespace arcade::ui {
                     const float intrinsic_min =
                         horizontal && !nodes_[child].child_count
                             ? text_intrinsic(child).min_content + 2 * cs.padding
-                            : 0.f;
+                            : 0.F;
                     const float minv =
-                        horizontal ? (cs.min_width >= 0 ? cs.min_width : intrinsic_min) : 0.f;
+                        horizontal ? (cs.min_width >= 0 ? cs.min_width : intrinsic_min) : 0.F;
                     const float maxv = horizontal && cs.max_width >= 0
                                            ? cs.max_width
                                            : std::numeric_limits<float>::infinity();
                     items.push_back({child,
                                      base,
                                      base,
-                                     std::max(0.f, cs.grow),
-                                     std::max(0.f, cs.shrink),
+                                     std::max(0.F, cs.grow),
+                                     std::max(0.F, cs.shrink),
                                      minv,
                                      maxv,
                                      false});
                 }
-                const float total_gaps = items.empty() ? 0.f : s.gap * float(items.size() - 1);
+                const float total_gaps = items.empty() ? 0.F : s.gap * float(items.size() - 1);
                 float inner_free = available - total_gaps;
                 for (const auto& item : items)
                     inner_free -= item.base + 2 * styles_[nodes_[item.id].style].margin;
-                const bool growing = inner_free > 0.f;
+                const bool growing = inner_free > 0.F;
                 // Iteratively freeze min/max violations and redistribute the
                 // remaining positive/negative space among unfrozen items.
                 for (std::size_t pass = 0; pass <= items.size(); ++pass) {
-                    float unfrozen_base = 0.f, total_factor = 0.f;
+                    float unfrozen_base = 0.F, total_factor = 0.F;
                     float remaining = available - total_gaps;
                     for (const auto& item : items) {
                         const auto& cs = styles_[nodes_[item.id].style];
@@ -514,7 +514,7 @@ export namespace arcade::ui {
                             continue;
                         const float factor = growing ? item.grow : item.shrink * item.base;
                         const float proposed =
-                            item.base + (total_factor > 0.f ? delta * factor / total_factor : 0.f);
+                            item.base + (total_factor > 0.F ? delta * factor / total_factor : 0.F);
                         item.target = std::clamp(proposed, item.minv, item.maxv);
                         if (item.target != proposed) {
                             item.frozen = true;
@@ -525,7 +525,7 @@ export namespace arcade::ui {
                         break;
                 }
                 if (horizontal) {
-                    line_cross = 0.f;
+                    line_cross = 0.F;
                     for (const auto& item : items) {
                         const auto& child_style = styles_[nodes_[item.id].style];
                         line_cross = std::max(line_cross,
@@ -537,9 +537,9 @@ export namespace arcade::ui {
                 for (const auto& item : items) {
                     used += item.target + 2 * styles_[nodes_[item.id].style].margin;
                 }
-                const float free = std::max(0.f, available - used);
-                float offset = 0.f, extra_gap = 0.f;
-                if (free > 0.f) {
+                const float free = std::max(0.F, available - used);
+                float offset = 0.F, extra_gap = 0.F;
+                if (free > 0.F) {
                     if (s.justify == 1)
                         offset = free / 2;
                     else if (s.justify == 2)
@@ -555,10 +555,10 @@ export namespace arcade::ui {
                     const float main = item.target;
                     const float preferred_cross =
                         horizontal ? constrained_height(child, main) : measure(child, !horizontal);
-                    const float available_cross = std::max(0.f, cross_space - 2 * cs.margin);
+                    const float available_cross = std::max(0.F, cross_space - 2 * cs.margin);
                     const float cross =
                         s.align == 0 ? available_cross : std::min(available_cross, preferred_cross);
-                    float cross_offset = 0.f;
+                    float cross_offset = 0.F;
                     if (s.align == 2)
                         cross_offset = (available_cross - cross) / 2;
                     if (s.align == 3)
@@ -615,7 +615,7 @@ export namespace arcade::ui {
             // A change in one child can affect all its flex/grid siblings,
             // but only its ancestors need marking: arrange recomputes
             // sibling positions and unchanged children are skipped.
-            while (id != 0xffffffffu) {
+            while (id != 0xffffffffU) {
                 dirty_[id] |= 1;
                 measure_valid_[id] = 0;
                 id = nodes_[id].parent;
@@ -657,7 +657,7 @@ export namespace arcade::ui {
             auto tbytes = u32(b + 32);
             if (version != 3 || count > 1000000 || nbytes != count * sizeof(Node) ||
                 sbytes != count * sizeof(Style) || tbytes % sizeof(Track) ||
-                tbytes > 4096u * 8u * count)
+                tbytes > 4096U * 8U * count)
                 throw std::runtime_error("Invalid header");
             std::uint64_t total = 72ull + nbytes + sbytes + tbytes + strbytes + abytes;
             if (total != result.bytes_.size())
@@ -720,15 +720,15 @@ export namespace arcade::ui {
             }
             for (std::uint32_t i = 0; i < tbytes / 8; ++i) {
                 const auto* t = b + 72 + nbytes + sbytes + static_cast<std::size_t>(i) * 8;
-                Track v {.kind=u32(t), .value=f32(t + 4)};
+                Track v {.kind = u32(t), .value = f32(t + 4)};
                 if (v.kind > 2 || !std::isfinite(v.value) || v.value < 0)
                     throw std::runtime_error("Invalid track");
                 result.tracks_.push_back(v);
             }
             result.rectangles_.resize(count);
             result.dirty_.assign(count, 1);
-            result.measured_width_.assign(count, 0.f);
-            result.measured_height_.assign(count, 0.f);
+            result.measured_width_.assign(count, 0.F);
+            result.measured_height_.assign(count, 0.F);
             result.measure_valid_.assign(count, 0);
             result.intrinsic_text_.resize(count);
             result.intrinsic_valid_.assign(count, 0);
@@ -787,8 +787,8 @@ export namespace arcade::ui {
                               ? line_measurer_(line_measurer_context_, str, font_size, width)
                               : approximate_lines(text_intrinsic(id), width);
             if (!std::isfinite(result.width) || !std::isfinite(result.height) || result.width < 0 ||
-                result.height < 0 || result.width > width + 0.01f || result.line_count == 0 ||
-                (result.height == 0.f && !str.empty()))
+                result.height < 0 || result.width > width + 0.01F || result.line_count == 0 ||
+                (result.height == 0.F && !str.empty()))
                 throw std::runtime_error("Invalid line measurement");
             return result;
         }
@@ -835,8 +835,8 @@ export namespace arcade::ui {
                 if ((cmd.rgba >> 24) != 0) {
                     out << "<rect x=\"" << cmd.rect.x << "\" y=\"" << cmd.rect.y << "\" width=\""
                         << cmd.rect.width << "\" height=\"" << cmd.rect.height << "\" fill=\""
-                        << color(cmd.rgba) << "\" fill-opacity=\"" << static_cast<float>(cmd.rgba >> 24) / 255.f
-                        << "\"/>\n";
+                        << color(cmd.rgba) << "\" fill-opacity=\""
+                        << static_cast<float>(cmd.rgba >> 24) / 255.F << "\"/>\n";
                 }
                 if (!cmd.text.empty()) {
                     out << "<text x=\"" << cmd.rect.x << "\" y=\"" << cmd.rect.y + cmd.font_size
@@ -881,7 +881,7 @@ export namespace arcade::ui {
             auto it = callbacks_.find(std::string(name));
             if (it == callbacks_.end() || (it->second.function == nullptr))
                 return false;
-            it->second.function(it->second.context, Event {.target=node, .name=name});
+            it->second.function(it->second.context, Event {.target = node, .name = name});
             return true;
         }
         bool click(float x, float y) {
