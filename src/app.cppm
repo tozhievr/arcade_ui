@@ -11,6 +11,7 @@ module;
 #include <utility>
 export module arcade.ui.app;
 export import arcade.ui.contracts;
+import arcade.ui;
 
 export namespace arcade::ui {
     enum class AppErrorCode : std::uint8_t {

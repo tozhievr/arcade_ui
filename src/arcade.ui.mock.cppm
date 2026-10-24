@@ -8,6 +8,7 @@ module;
 #include <utility>
 export module arcade.ui.mock;
 export import arcade.ui.contracts;
+import arcade.ui;
 
 export namespace arcade::ui {
     struct RecordedDrawCommand {
