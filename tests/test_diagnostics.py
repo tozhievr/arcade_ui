@@ -40,7 +40,7 @@ class DiagnosticsTests(unittest.TestCase):
             proc=subprocess.run([sys.executable,str(ROOT/'tools/arcuxc.py'),str(path),'-o',str(out),
                  '--diagnostic-format','json'],capture_output=True,text=True)
             self.assertEqual(proc.returncode,1)
-            self.assertEqual(json.loads(proc.stderr)['location']['column'],13)
+            self.assertEqual(json.loads(proc.stderr)['diagnostics'][0]['location']['column'],13)
             self.assertFalse(out.exists())
 
 if __name__=='__main__':unittest.main()
