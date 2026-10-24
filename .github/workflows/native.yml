@@ -83,7 +83,7 @@ jobs:
       - name: clang-tidy audit (report-only until baseline is clean)
         if: success()
         run: |
-          python3 tools/clang-tidy-audit.py --build build/native --timeout 15 \
+          python3 tools/clang-tidy-audit.py --build build/native --timeout 45 \
             --binary clang-tidy-21 \
             --output build/native/clang-tidy-report.json
 

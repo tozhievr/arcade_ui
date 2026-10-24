@@ -62,7 +62,7 @@ def main() -> int:
         except subprocess.TimeoutExpired as e:
             stdout = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
             stderr = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-            combined = stdout + stderr + "\\nclang-tidy timeout after " + str(args.timeout) + " seconds"
+            combined = stdout + stderr + "\nclang-tidy timeout after " + str(args.timeout) + " seconds"
             status = 124
         for match in PATTERN.finditer(combined):
             records.append({"file": match.group(1), "line": int(match.group(2)),
