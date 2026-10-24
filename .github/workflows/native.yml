@@ -1,0 +1,87 @@
+name: Native C++ Modules CI
+
+on:
+  push:
+    branches:
+      - master
+      - feature/**
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'tools/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.github/workflows/native.yml'
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Clang C++ Modules / CTest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CC: clang-21
+      CXX: clang++-21
+      ARCADE_UI_TEST_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang 21 and native libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg ca-certificates ninja-build pkg-config \
+            libicu-dev libfreetype-dev libharfbuzz-dev fonts-dejavu-core
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | \
+            sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | \
+            sudo tee /etc/apt/sources.list.d/llvm21.list
+          sudo apt-get update
+          sudo apt-get install -y clang-21 lld-21
+          clang++-21 --version
+
+      - name: Install Python and CMake toolchain
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements.txt
+
+      - name: Install CMake 4.4+ and AOT dependencies
+        run: |
+          python -m pip install 'cmake>=4.4,<5' -r tools/requirements.txt
+          cmake --version
+          ninja --version
+
+      - name: Configure native build
+        run: |
+          cmake -S . -B build/native -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DBUILD_TESTING=ON \
+            -DARCADE_UI_ENABLE_UNICODE=ON \
+            -DARCADE_UI_ENABLE_FONT_BACKEND=ON
+
+      - name: Build every C++ module and test
+        run: cmake --build build/native --parallel 2
+
+      - name: Run CTest including renderer contract and font cache
+        run: ctest --test-dir build/native --output-on-failure --parallel 2
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-debug-logs
+          path: |
+            build/native/Testing/Temporary/
+            build/native/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore
