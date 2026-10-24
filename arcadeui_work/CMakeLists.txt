@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.5.0)
-project(ArcadeUI VERSION 0.2.0 LANGUAGES CXX)
+project(ArcadeUI VERSION 0.3.0 LANGUAGES CXX)
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "Clang required")
 endif()
