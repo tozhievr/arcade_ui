@@ -1,123 +1,201 @@
+# Arcade UI
 
-## v1.4 — Unicode text analysis (ICU)
+**Нативный AOT-движок пользовательских интерфейсов на C++ Modules.** Стандартная разметка HTML и CSS компилируется в компактный бинарный формат `.arcuxi`, который загружается C++ runtime без браузера, JavaScript и runtime DOM.
 
-Added `src/arcade.ui.unicode.cppm`, an independently usable **native C++ module** with an ICU-backed implementation:
+[![Arcade UI CI](https://github.com/tozhievr/arcade_ui/actions/workflows/ci.yml/badge.svg)](https://github.com/tozhievr/arcade_ui/actions/workflows/ci.yml)
+![C++](https://img.shields.io/badge/C%2B%2B-modules-00599C)
+![Clang](https://img.shields.io/badge/compiler-Clang-orange)
+![Status](https://img.shields.io/badge/status-experimental-yellow)
 
-- `arcade::ui::unicode::analyze(utf8, paragraph_direction)` returns legal Unicode Line Breaking Algorithm (UAX #14) opportunities as **UTF-8 byte offsets**.
-- Returns paragraph-level Unicode Bidirectional Algorithm (UAX #9) visual runs with UTF-8 start/end ranges and LTR/RTL directions.
-- Converts ICU's UTF-16 offsets to UTF-8 byte offsets, including supplementary-plane characters (emoji).
-- Rejects invalid UTF-8 rather than replacing corrupted input implicitly.
-- `ARCADE_UI_ENABLE_UNICODE=ON` enables the optional ICU component; it is built only when ICU development libraries are detected.
-- When the optional FreeType/HarfBuzz backend is also present, it uses Unicode break opportunities for line wrapping and intrinsic segment measurements. Without ICU, the legacy ASCII whitespace behavior is retained.
+> **Статус: экспериментальный прототип v1.9.** Проект уже содержит работающие компоненты AOT-компилятора, бинарного загрузчика, Flex/Grid layout и Unicode Text. Он **не** является браузером, полноценным CSS-движком или готовой UI-библиотекой для production.
 
-### Test status
+## Зачем Arcade UI
 
-- Python compiler suite: **41/41 passed**.
-- Standalone Unicode module: **compiled and executed** with Clang 17 and system ICU 76; tests cover Latin whitespace, Chinese text, bidi Hebrew fragments, UTF-8 emoji offsets, invalid UTF-8.
-- FreeType/HarfBuzz backend: **not compiled in this environment**, because development headers/pkg-config packages are missing. Its ICU integration is therefore unverified.
-- Clang 23.1.3 / CMake 4.5.0-rc1: **not tested** here.
+Вместо HTML/CSS-парсинга при каждом запуске интерфейс проходит предварительную компиляцию. Рантайм получает упакованные узлы, стили и ресурсы, строит геометрию и генерирует команды отрисовки.
 
-### Remaining standard-compliance work
-
-This is **not full CSS Text**, and paragraph-level bidi runs are **not yet sufficient for CSS line layout**. The next steps are CSS white-space processing, style-aware segmentation, per-line UAX #9 resolution after wrapping, script/language/font fallback runs, contextual shaping across break opportunities, real OpenType glyph runs, and GPU glyph atlas rendering. `OpenType::lines()` currently computes approximate greedy widths from independently shaped break segments. It must not be used as a pixel-exact shaping/layout engine for Arabic/Indic scripts; shaping entire runs and splitting at proper cluster boundaries is required.
-
-The Unicode module exports no third-party ICU types. The binary `.arcuxi` format remains v3.
-
-## v1.5 — Per-line Unicode bidi resolution
-
-Added `unicode::resolve_visual_lines(utf8, line_spans, paragraph_direction)` to `arcade.ui.unicode`.
-
-- Input ranges and returned visual-run positions are UTF-8 byte offsets into the original text.
-- Validates line range bounds and code point boundaries (including supplementary-plane characters).
-- Uses ICU `ubidi_setPara()` followed by `ubidi_setLine()` for each requested line, instead of incorrectly reusing paragraph-level visual runs.
-- Returns visual runs in display order with original byte spans and text direction.
-- New `runtime_unicode_lines` test covers mixed Hebrew/Latin lines, emoji boundaries and invalid split offsets.
-- API does **not** reorder glyphs, implement CSS `white-space` or `overflow-wrap`, generate shaped glyph runs, perform font fallback or assemble line breaks. The caller supplies line spans after line fitting; this is one verified building block, not complete CSS Text.
-
-### Verified here
-
-- Clang 17 `-std=c++2b` + ICU: unicode module and new native test compile/link/run: **PASS**.
-- Python compiler regression suite: **41 tests passed**.
-- Clang 23.1.3/CMake 4.5.0-rc1 and HarfBuzz/FreeType-enabled build: not available for verification here.
-
-## v1.6 — CSS Text line-fitting foundation
-
-Added `src/arcade.ui.text.cppm` (`import arcade.ui.text;`), separately from the existing Unicode module. It exposes `text::fit(text, width, style, measure, context)`, a style profile (`WhiteSpace`, `OverflowWrap`) and `Line`/`Fragment` records. Its input is UTF-8 and fragment offsets point back into the original string. Unicode UAX #14 breaks and per-line UAX #9 runs are supplied by ICU via `arcade.ui.unicode`.
-
-Supported initial cases: basic ASCII whitespace collapsing; forced LF/CRLF lines under `pre`, `pre-wrap`, `pre-line` and `break-spaces`; no-wrap vs wrapping; emergency UTF-8 codepoint splitting under `anywhere` / `break-word`; a measurement callback for line width; rejection of invalid UTF-8, invalid widths and callbacks. Public module interfaces contain no ICU headers.
-
-**Important implementation limits:** This is NOT full CSS Text Level 3/4. The line fitter is a proof-of-concept: it does not yet correctly handle all trailing/leading collapsible whitespace at line boundaries, tabs, soft hyphens, CSS segment-break transformation, word-break/hyphens, grapheme-based emergency breaks, spans/styles crossing text runs, hanging punctuation, line-height/baselines, or script-sensitive shaping/measurement. Its 'anywhere' emergency mode currently splits by Unicode codepoint, which can split a grapheme cluster. Returning visual runs does not mean glyph reordering/shaping is implemented. ICU and a caller-provided width callback are required. It is not yet wired into `Document` layout or the binary CSS style schema; the text module is independently testable and ready for incremental integration. For production display use an actual OpenType backend and cluster-aligned fitting.
-
-### Verified
-
-- Clang 17 (`-std=c++2b`), ICU system libraries: `arcade.ui.unicode` and new `arcade.ui.text` module compiled, linked and executed: **PASS**.
-- New `tests/text_pipeline.cpp`: basic wrap, preformatted hard newline, emergency wrap, mixed bidi and ASCII whitespace collapse: **PASS**.
-- Previous Python suite: **41/41 PASS**.
-- CMake 4.5 / Clang 23.1.3 not available for verification here.
-
-## v1.7 — Grapheme-safe line breaking and Document bridge
-
-- `arcade.ui.unicode`: `grapheme_boundaries(utf8)` uses ICU UAX #29 character boundaries and returns byte offsets in original UTF-8; rejects malformed UTF-8.
-- `arcade.ui.text`: emergency `overflow-wrap` splits at **extended grapheme cluster** boundaries instead of UTF-8 code-point boundaries. This avoids splitting combining accents, emoji modifiers and ZWJ emoji sequences.
-- `arcade.ui.text.document`: non-owning `DocumentAdapter` installs the CSS Text line fitter into the existing `Document::set_line_measurer()` interface. Supply a real font-aware width callback; the adapter has no glyph metrics of its own. The adapter must outlive the attachment, and caller must detach before destruction. Existing `Document` API currently rejects overflowed line widths; the bridge reports such results as an invalid measurement rather than hiding overflow.
-- New regression tests: `runtime_text_graphemes` and `runtime_text_document_bridge`.
-- **Scope:** not a complete CSS Text implementation. Width measurement remains caller-provided; no shaping, style runs, font fallback, full white-space processing, baseline or GPU glyph atlas in this iteration. `Document` CSS properties are not yet mapped automatically to text::Style — the caller provides the style to `DocumentAdapter`.
-- **Verified here:** Clang 17 C++2b manual module builds; ICU 76.1; grapheme test, bridge test against freshly compiled `text_layout_rows.arcuxi`, original text pipeline test; 41/41 Python compiler tests.
-- CMake 4.5 and Clang 23.1.3 unavailable here, so the preset/target build has not been verified.
-
-## v1.8 — Unicode script + bidi text runs
-
-New native module `arcade.ui.text.runs` (`src/arcade.ui.text.runs.cppm`) and
-CTest `runtime_text_runs` (`tests/text_runs.cpp`). Segment already fitted lines
-into UTF-8 source ranges annotated with ICU script codes and per-line bidi
-directions. Uses the previous ICU `resolve_visual_lines()` implementation.
-The module exposes only standard C++ types and imports `arcade.ui.unicode`.
-
-```cpp
-import arcade.ui.text.runs;
-import arcade.ui.unicode;
-
-std::string_view value = "Hello 世界 שלום!";
-auto lines = arcade::ui::text::segment_visual_lines(
-    value, {{0, static_cast<std::uint32_t>(value.size())}});
+```text
+HTML + CSS + assets
+        │
+        ▼
+   arcuxc.py (AOT)
+   ├── parsing / selectors / diagnostics
+   ├── style & layout metadata
+   └── resource packaging
+        │
+        ▼
+      .arcuxi
+        │
+        ▼
+ arcade.ui (C++ runtime)
+   ├── flat node storage / PMR
+   ├── incremental Flex & Grid layout
+   ├── events / native callback dispatch
+   └── draw commands / SVG preview
+        │
+        └── optional text modules
+            ├── ICU: Unicode analysis
+            ├── CSS Text: line fitting & bidi
+            ├── FreeType + HarfBuzz: OpenType backend
+            └── ShapedRunCache
 ```
 
-### Scope and limitations
+**Главные принципы:** реальный HTML/CSS-синтаксис в поддерживаемом профиле, минимальная работа при запуске, плоские данные вместо объектного DOM, инкрементальные обновления и публичный API на C++ Modules. Полного соответствия HTML Living Standard / CSS Snapshot 2026 пока **нет**.
 
-- This is segmentation for shaping, **not OpenType glyph shaping**, automatic
-  font fallback, language itemization, a glyph cache, or finished paint output.
-- Common/Inherited scripts attach to their preceding run as an initial heuristic;
-  proper UAX #24 paired punctuation and script-extension handling remains.
-- ICU script codes are carried as stable numeric metadata for the session;
-  they are not portable file-format identifiers and are **not serialized**.
-- The new module is available only when ICU is found (`ARCADE_UI_ENABLE_UNICODE`).
-- Existing `.arcuxi` v3 layout remains unchanged.
+## Быстрый старт
 
-### Validation
+### Требования
 
-Locally compiled and executed the new module and `tests/text_runs.cpp` using
-Clang 17 (`-std=c++2b`) and ICU. All 41 Python regression tests passed. The
-HarfBuzz/FreeType path and Clang 23 / CMake 4.5 have not been validated here.
+- **CMake 4.5+**, **Ninja**, **Clang** с поддержкой named C++ Modules и опции `-std=c++2d`. Целевая конфигурация проекта — Clang 23.1.3 + CMake 4.5.0-rc1; она ещё не была подтверждена end-to-end тестированием в исходном окружении разработки.
+- **Python 3.11+** для AOT-компилятора; зависимости находятся в `tools/requirements.txt`.
+- Необязательно: **ICU** (`uc` и `i18n`) для Unicode-модулей; **FreeType** и **HarfBuzz** для OpenType backend. Их development-пакеты и пути поиска должны быть доступны CMake.
 
+```bash
+git clone https://github.com/tozhievr/arcade_ui.git
+cd arcade_ui
 
-## v1.9 — Shaped Run Cache
+python -m pip install -r tools/requirements.txt
 
-Added `src/arcade.ui.text.cache.cppm`, a standalone C++23 named module with
-`ShapedRunCache`, `ShapeKey`, `GlyphMetrics` and `GlyphRunView`.
+cmake --preset debug
+cmake --build --preset debug --parallel
+ctest --test-dir build/debug --output-on-failure
+```
 
-- Per-glyph **SoA** arrays (IDs, UTF-8 cluster offsets, advances, offsets) backed by `std::pmr`.
-- Exact UTF-8 text/key matching; no hash-only cache collisions.
-- LRU eviction bounded by entry count and glyph count; records exceeding budget are not cached.
-- Face generation and `invalidate_face(face_id)` prevent stale runs after font updates.
-- Shaper callback allows a HarfBuzz-backed producer, but this integration has **not yet been wired into `OpenType`**.
-- Returned spans are valid only until the next modifying cache operation. The cache is **not thread-safe**.
-- `tests/shaped_cache.cpp` tests hits, misses, eviction, generation changes, clear, and failure.
+Если зависимости ICU или HarfBuzz/FreeType не найдены, соответствующие опциональные targets не собираются. Базовые AOT-компилятор и `arcade_ui` остаются доступными.
 
-This is infrastructure for storing shaped runs, **not** a complete shaping engine, font fallback,
-GPU atlas or a CSS Text conformance implementation. Cache capacity bounds glyph count, but
-not total bytes including source UTF-8 strings or vector overhead. The lookup is currently
-linear in the number of cached runs; profile before using at very large scales.
+Сборка с `--preset release` использует каталог `build/release`. CMake устанавливает базовый уровень C++23 для распознавания модулей, а Clang получает `-std=c++2d` явно. Это **не** означает реализацию всего будущего стандарта C++29.
 
-Manual validation in this environment: Clang 17 `-std=c++2b` module precompile + link +
-execute the shaped-cache test; Python suite 41/41. Clang 23 / CMake 4.5 / HarfBuzz were
-not available for verification.
+### Скомпилировать HTML/CSS в ArcUXI
+
+```bash
+python tools/arcuxc.py examples/dashboard.html -o dashboard.arcuxi
+```
+
+Для получения сообщений об ошибках в JSON:
+
+```bash
+python tools/arcuxc.py examples/diagnostics_demo.html -o diagnostics.arcuxi --diagnostic-format=json --max-errors=100
+```
+
+Диагностика включает коды, уровни серьёзности, местоположение, исходный контекст и подсказки. Source mapping улучшен, но ещё не гарантирует lossless-отображение для всех крайних случаев WHATWG/Unicode.
+
+### Запустить runtime
+
+```bash
+./build/debug/arcadeui ./build/debug/dashboard.arcuxi
+./build/debug/arcadeui ./build/debug/dashboard.arcuxi --geometry
+./build/debug/arcadeui ./build/debug/dashboard.arcuxi preview.svg
+```
+
+На Windows исполняемый файл называется `arcadeui.exe`. Это **CLI-демонстрация**, которая загружает интерфейс, рассчитывает layout и умеет экспортировать SVG; полноценного интерактивного GPU-окна здесь пока нет.
+
+## Пример интерфейса
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <style>
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      padding: 16px;
+    }
+    button { background: #344054; color: white; }
+  </style>
+</head>
+<body>
+  <main class="dashboard">
+    <button data-action="start">Start</button>
+    <button data-action="settings">Settings</button>
+    <button data-action="exit">Exit</button>
+  </main>
+</body>
+</html>
+```
+
+`data-action` задаёт идентификатор нативного обработчика, **не** JavaScript. Элемент `<script>` и inline `on*=` обработчики запрещены намеренно.
+
+## Реализовано и ограничения
+
+| Подсистема | Что есть сейчас | Что ещё не реализовано |
+| --- | --- | --- |
+| HTML/CSS AOT | Разбор поддерживаемого HTML, CSS через `tinycss2` / `cssselect2`, каскад author declarations, строгая диагностика | Полный HTML tree builder, все CSS-модули, media/container queries, custom properties |
+| `.arcuxi` | Бинарная упаковка узлов, стилей, Grid tracks, строк и ресурсов (формат v3) | Полная переносимая ABI-спецификация и исчерпывающая валидация недоверенных файлов |
+| Layout | Плоское хранение; Block/Flex/Grid subset; `fr`, ограниченный `minmax()`, spanning; dirty propagation | Полные нормативные алгоритмы Flexbox/Grid, все intrinsic contributions и sizing cases |
+| Текст | Подключаемые измерители, width-aware строки, начальные `min-content` / `max-content` | Полная CSS Text-типографика, baseline и shaping всех случаев |
+| Unicode (ICU) | UAX #14 break opportunities, UAX #9 bidi, UAX #29 grapheme boundaries, script runs | Полное интегрированное форматирование CSS Text |
+| OpenType (опционально) | Код backend на FreeType/HarfBuzz с изоляцией заголовков | Полностью проверенная сборка/интеграция, font fallback и реальный GPU glyph renderer |
+| Glyph cache | `ShapedRunCache`: PMR SoA, LRU, generations, инвалидация | Интеграция кэша с HarfBuzz и полноценным text renderer |
+| Renderer | Draw commands и SVG preview | GPU backend, atlas, batching, accessibility / IME |
+
+**Важно:** существование отдельного Unicode/Text модуля не означает, что он уже автоматически используется во всех случаях обычного `Document`. Например, `DocumentAdapter` подключается явно, а CSS Text style пока не передаётся из `.arcuxi` автоматически.
+
+## Архитектура репозитория
+
+```text
+.
+├── .github/workflows/ci.yml       # GitHub Actions
+├── CMakeLists.txt                  # C++ Modules, native targets, CTest
+├── CMakePresets.json               # debug / release, Ninja
+├── docs/standards-profile.md      # Контракт стандартов и текущий профиль
+├── examples/                      # HTML, .arcuxi и SVG-примеры
+├── src/
+│   ├── arcade.ui.cppm              # Базовый runtime / layout / Document
+│   ├── arcade.ui.font.cppm         # Опциональный OpenType backend
+│   ├── arcade.ui.unicode.cppm      # ICU Unicode
+│   ├── arcade.ui.text.cppm         # CSS Text fitting
+│   ├── arcade.ui.text.document.cppm# Адаптер к Document
+│   ├── arcade.ui.text.runs.cppm    # Script & bidi runs
+│   ├── arcade.ui.text.cache.cppm   # Shaped glyph cache
+│   └── main.cpp                    # CLI / SVG preview
+├── tests/                          # Python и C++ регрессии
+└── tools/
+    ├── arcuxc.py                   # AOT компилятор
+    ├── diagnostics.py              # Контекстная диагностика
+    └── requirements.txt
+```
+
+**C++-модули не требуют включения заголовков ICU/HarfBuzz/FreeType в публичные интерфейсы.** Зависимости изолируются в реализации соответствующих backend-модулей.
+
+## Тестирование и CI/CD
+
+Быстрый запуск Python-тестов:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Нативные проверки после CMake-сборки:
+
+```bash
+ctest --test-dir build/debug --output-on-failure
+```
+
+GitHub Actions workflow: [Arcade UI CI](https://github.com/tozhievr/arcade_ui/actions/workflows/ci.yml). Он запускает Python-тесты, компилирует пример `.arcuxi`, сохраняет артефакты и упаковывает исходники. По тегам `v*` настроен шаг публикации GitHub Release.
+
+**Граница CI:** текущий GitHub Actions workflow **не** компилирует C++ targets, не проверяет HarfBuzz/FreeType и не подтверждает работу Clang 23.1.3. Эти проверки остаются задачами развития CI.
+
+## Стандарты и принципы совместимости
+
+Arcade UI ориентируется на:
+
+- [HTML Living Standard](https://html.spec.whatwg.org/multipage/) — стандартный HTML-синтаксис, но сознательно ограниченный набор элементов и поведения;
+- [CSS Snapshot / CSS specifications](https://www.w3.org/TR/css/) — стандартные CSS declarations и алгоритмы в пределах реализованного профиля;
+- [Unicode UAX #9](https://unicode.org/reports/tr9/), [UAX #14](https://unicode.org/reports/tr14/) и [UAX #29](https://unicode.org/reports/tr29/) — обработка направления и разбиения текста.
+
+Arcade UI **не поддерживает** браузерные legacy-режимы, JavaScript runtime, DOM scripting, navigation и Web API. Неподдерживаемые конструкции должны приводить к диагностике на этапе AOT, а не к тихой имитации браузерного поведения.
+
+Более подробный контракт: [docs/standards-profile.md](docs/standards-profile.md). Некоторые исторические разделы этого документа отражают более ранние версии; актуальную функциональность нужно сверять с исходниками и тестами.
+
+## Дальнейшее развитие
+
+1. Завершить спецификационно точные Flexbox/Grid: intrinsic sizing, auto placement, percentage sizing, baseline.
+2. Интегрировать CSS Text, script runs, HarfBuzz shaping и ShapedRunCache в единый pipeline.
+3. Добавить font fallback, glyph atlas и нативный GPU renderer.
+4. Расширить проверку `.arcuxi` и source maps, включая fuzz/property tests.
+5. Запустить C++ CI matrix для целевых Clang, CMake, Ninja и платформ; измерять latency, allocation count, bytes touched и cache hit rate.
+
+---
+
+**Arcade UI развивается как нативная система интерфейсов, а не как встраиваемый браузер.** Производительность и совместимость с HTML/CSS следует оценивать по воспроизводимым тестам, а не по заявленным возможностям архитектуры.
