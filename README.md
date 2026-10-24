@@ -104,3 +104,37 @@ full standards-level source fidelity is not yet claimed.
 
 Build with Clang 23 + CMake 4.5 as above. Clang 17 `-std=c++2b` smoke verification is also possible by direct compiler invocation.
 
+
+
+## v0.7 — Incremental dirty-layout engine
+
+This release adds an **incremental layout implementation** to `arcade.ui`:
+
+- Dense PMR arrays: a dirty-byte per node, cached intrinsic width/height,
+  and a 2-bit measurement-valid mask. No per-node heap objects.
+- `Document::invalidate(node_id)` marks the node and its ancestors dirty and
+  invalidates their intrinsic size caches. Siblings are remeasured from cache,
+  and only geometrically changed or locally dirty branches are arranged.
+- `Document::set_size(node_id, width, height)` changes explicit dimensions
+  (`-1` means `auto`). `set_background(node_id, rgba)` is paint-only.
+- Unchanged `resize(width,height)` calls reuse the prior geometry and draw
+  commands instead of re-running layout or paint command creation.
+- `Document::layout_stats()` exposes `layout_visits`, `layout_skips`,
+  `measure_computations`, `measure_cache_hits`, and `painted_commands`.
+- Native `tests/incremental.cpp` verifies no work for unchanged viewport,
+  partial recomputation for changed leaf, geometry equality with a fresh full
+  layout, and no layout for paint-only updates. Registered as
+  `runtime_incremental` in CTest.
+
+**Important limits:** Layout remains the explicit *limited CSS profile* from
+v0.6, not conforming Flex/Grid. The current dependency model encodes structural
+parent-to-child layout and ancestor intrinsic-size dependencies. In particular,
+CSS custom properties, container queries, viewport-relative sizes, advanced
+Grid spans, and dynamic DOM mutation are **not** tracked yet. Render command
+packing still rebuilds the command array after any geometry change; GPU dirty
+ranges and resource reuse are future work. `set_size` updates the style record
+selected by the node; the current AOT writer emits one style record per node.
+
+Tested locally using Clang 17 (`-std=c++2b`) and 33 Python tests. The CMake
+configuration targets Clang 23 / CMake 4.5 / Ninja and is not verified with
+those exact versions in this environment.
