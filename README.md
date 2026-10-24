@@ -37,3 +37,16 @@ Python unit tests (5/5) passed. The C++ module was precompiled, compiled, linked
 ## Standards policy
 
 The source syntax follows HTML Living Standard and CSS Snapshot 2026 **within a documented support profile**. No browser backwards compatibility and no JavaScript. See [docs/standards-profile.md](docs/standards-profile.md). The current implementation is not fully HTML/CSS-conformant; unsupported CSS properties are build-time errors rather than silently ignored.
+
+## v0.4 — contextual compiler diagnostics
+
+`arcuxc` now emits structured errors with stable `AUX-HTML-*`, `AUX-CSS-*`, and `AUX-ASSET-*` codes, source filename, 1-based line/column, source excerpts and underline carets, helpful suggestions for mistyped properties/elements, and ANSI color on interactive terminals (`NO_COLOR` respected). It returns nonzero on failure, does not write a new `.arcuxi` on diagnosed failure, and preserves the `compile_ui(source, root)` programmatic API (diagnostics inherit `ValueError`).
+
+```sh
+python tools/arcuxc.py examples/dashboard.html -o dashboard.arcuxi
+python tools/arcuxc.py examples/broken.html -o broken.arcuxi --color=always --context-lines=3
+python tools/arcuxc.py examples/broken.html -o broken.arcuxi --diagnostic-format=json
+python -m unittest discover -s tests -v
+```
+
+Diagnostic JSON fields: `severity`, `code`, `message`, `location` (`file`, `line`, `column`, `length`), `hint`, `notes`. Paths/positions are intended for IDE integration. This is a first diagnostics implementation: positions for CSS created by nontrivial HTML normalization, repeated nested CSS blocks, and malformed tokenization require refinement; a full WHATWG tokenizer/parser and lossless CSS source map are not implemented yet. Unsupported CSS remains rejected by design.
