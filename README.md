@@ -64,3 +64,37 @@ Supported initial cases: basic ASCII whitespace collapsing; forced LF/CRLF lines
 - **Scope:** not a complete CSS Text implementation. Width measurement remains caller-provided; no shaping, style runs, font fallback, full white-space processing, baseline or GPU glyph atlas in this iteration. `Document` CSS properties are not yet mapped automatically to text::Style — the caller provides the style to `DocumentAdapter`.
 - **Verified here:** Clang 17 C++2b manual module builds; ICU 76.1; grapheme test, bridge test against freshly compiled `text_layout_rows.arcuxi`, original text pipeline test; 41/41 Python compiler tests.
 - CMake 4.5 and Clang 23.1.3 unavailable here, so the preset/target build has not been verified.
+
+## v1.8 — Unicode script + bidi text runs
+
+New native module `arcade.ui.text.runs` (`src/arcade.ui.text.runs.cppm`) and
+CTest `runtime_text_runs` (`tests/text_runs.cpp`). Segment already fitted lines
+into UTF-8 source ranges annotated with ICU script codes and per-line bidi
+directions. Uses the previous ICU `resolve_visual_lines()` implementation.
+The module exposes only standard C++ types and imports `arcade.ui.unicode`.
+
+```cpp
+import arcade.ui.text.runs;
+import arcade.ui.unicode;
+
+std::string_view value = "Hello 世界 שלום!";
+auto lines = arcade::ui::text::segment_visual_lines(
+    value, {{0, static_cast<std::uint32_t>(value.size())}});
+```
+
+### Scope and limitations
+
+- This is segmentation for shaping, **not OpenType glyph shaping**, automatic
+  font fallback, language itemization, a glyph cache, or finished paint output.
+- Common/Inherited scripts attach to their preceding run as an initial heuristic;
+  proper UAX #24 paired punctuation and script-extension handling remains.
+- ICU script codes are carried as stable numeric metadata for the session;
+  they are not portable file-format identifiers and are **not serialized**.
+- The new module is available only when ICU is found (`ARCADE_UI_ENABLE_UNICODE`).
+- Existing `.arcuxi` v3 layout remains unchanged.
+
+### Validation
+
+Locally compiled and executed the new module and `tests/text_runs.cpp` using
+Clang 17 (`-std=c++2b`) and ICU. All 41 Python regression tests passed. The
+HarfBuzz/FreeType path and Clang 23 / CMake 4.5 have not been validated here.
