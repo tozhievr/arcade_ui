@@ -75,7 +75,7 @@ export namespace arcade::ui {
         }
         [[nodiscard]] float flex_basis(std::uint32_t id,bool horizontal) {
             const auto& s=styles_[nodes_[id].style];
-            return horizontal?clamp_width(s.basis>=0?s.basis:measure(id,true),s):
+            return horizontal?(s.basis>=0?s.basis:measure(id,true)):
                 (s.basis>=0?s.basis:measure(id,false));
         }
         static std::uint32_t u32(const std::byte* p) noexcept {
@@ -213,7 +213,7 @@ export namespace arcade::ui {
             float cross_cursor=0.f;
             while(begin<n.child_count){
                 std::uint32_t end=begin;
-                float basis=0.f,grow_total=0.f,shrink_weight=0.f,line_cross=0.f;
+                float basis=0.f,line_cross=0.f;
                 while(end<n.child_count){
                     const auto child=n.first_child+end;
                     const auto& cs=styles_[nodes_[child].style];
@@ -222,30 +222,73 @@ export namespace arcade::ui {
                     const float outer=b+cs.margin*2;
                     const float needed=outer+(end>begin?s.gap:0.f);
                     if(s.wrap && end>begin && basis+needed>available)break;
-                    basis+=needed;grow_total+=std::max(0.f,cs.grow);
-                    shrink_weight+=b*std::max(0.f,cs.shrink);
+                    basis+=needed;
                     line_cross=std::max(line_cross,measure(child,!horizontal)+2*cs.margin);
                     ++end;
                 }
                 if(end==begin)++end;
-                const float free=available-basis;
-                float offset=0.f,extra_gap=0.f;
-                if(free>0.f && grow_total==0.f){
-                    if(s.justify==1)offset=free/2;
-                    else if(s.justify==2)offset=free;
-                    else if(s.justify==3 && end-begin>1)extra_gap=free/float(end-begin-1);
-                }
-                float cursor=(horizontal?area.x:area.y)+pad+offset;
-                const float cross_space=s.wrap?line_cross:(horizontal?innerh:innerw);
+                // Resolve CSS flexible lengths with iterative freezing. The
+                // existing profile supports explicit width/min-width/max-width;
+                // intrinsic minima are estimated by measure() until text shaping
+                // and min-content/max-content are modeled explicitly.
+                struct Item {std::uint32_t id;float base,target,grow,shrink,minv,maxv;bool frozen;};
+                std::vector<Item> items;
+                items.reserve(end-begin);
                 for(std::uint32_t i=begin;i<end;++i){
                     const auto child=n.first_child+i;
                     const auto& cs=styles_[nodes_[child].style];
-                    if(cs.display==3){layout(child,{});continue;}
-                    const float b=flex_basis(child,horizontal);
-                    float main=b;
-                    if(free>0 && grow_total>0)main+=free*std::max(0.f,cs.grow)/grow_total;
-                    if(free<0 && shrink_weight>0)main=std::max(0.f,b+free*b*std::max(0.f,cs.shrink)/shrink_weight);
-                    if(horizontal)main=clamp_width(main,cs);
+                    if(cs.display==3)continue;
+                    const float base=flex_basis(child,horizontal);
+                    const float minv=horizontal && cs.min_width>=0?cs.min_width:0.f;
+                    const float maxv=horizontal && cs.max_width>=0?cs.max_width:std::numeric_limits<float>::infinity();
+                    items.push_back({child,base,base,std::max(0.f,cs.grow),std::max(0.f,cs.shrink),minv,maxv,false});
+                }
+                const float total_gaps=items.empty()?0.f:s.gap*float(items.size()-1);
+                float inner_free=available-total_gaps;
+                for(const auto& item:items)inner_free-=item.base+2*styles_[nodes_[item.id].style].margin;
+                const bool growing=inner_free>0.f;
+                // Iteratively freeze min/max violations and redistribute the
+                // remaining positive/negative space among unfrozen items.
+                for(std::size_t pass=0;pass<=items.size();++pass){
+                    float unfrozen_base=0.f,total_factor=0.f;
+                    float remaining=available-total_gaps;
+                    for(const auto& item:items){
+                        const auto& cs=styles_[nodes_[item.id].style];
+                        remaining-=2*cs.margin;
+                        if(item.frozen)remaining-=item.target;
+                        else {
+                            unfrozen_base+=item.base;
+                            total_factor+=growing?item.grow:item.shrink*item.base;
+                        }
+                    }
+                    const float delta=remaining-unfrozen_base;
+                    bool did_freeze=false;
+                    for(auto& item:items){
+                        if(item.frozen)continue;
+                        const float factor=growing?item.grow:item.shrink*item.base;
+                        const float proposed=item.base+(total_factor>0.f?delta*factor/total_factor:0.f);
+                        item.target=std::clamp(proposed,item.minv,item.maxv);
+                        if(item.target!=proposed){item.frozen=true;did_freeze=true;}
+                    }
+                    if(!did_freeze)break;
+                }
+                float used=total_gaps;
+                for(const auto& item:items){
+                    used+=item.target+2*styles_[nodes_[item.id].style].margin;
+                }
+                const float free=std::max(0.f,available-used);
+                float offset=0.f,extra_gap=0.f;
+                if(free>0.f){
+                    if(s.justify==1)offset=free/2;
+                    else if(s.justify==2)offset=free;
+                    else if(s.justify==3 && items.size()>1)extra_gap=free/float(items.size()-1);
+                }
+                float cursor=(horizontal?area.x:area.y)+pad+offset;
+                const float cross_space=s.wrap?line_cross:(horizontal?innerh:innerw);
+                for(const auto& item:items){
+                    const auto child=item.id;
+                    const auto& cs=styles_[nodes_[child].style];
+                    const float main=item.target;
                     const float preferred_cross=measure(child,!horizontal);
                     const float available_cross=std::max(0.f,cross_space-2*cs.margin);
                     const float cross=s.align==0?available_cross:std::min(available_cross,preferred_cross);
@@ -257,6 +300,11 @@ export namespace arcade::ui {
                         Rect{cross_origin,cursor+cs.margin,cross,main};
                     layout(child,r);
                     cursor+=main+2*cs.margin+s.gap+extra_gap;
+                }
+                // Hidden descendants still need their previous geometry cleared.
+                for(std::uint32_t i=begin;i<end;++i){
+                    const auto child=n.first_child+i;
+                    if(styles_[nodes_[child].style].display==3)layout(child,{});
                 }
                 cross_cursor+=line_cross+s.gap;
                 begin=end;
