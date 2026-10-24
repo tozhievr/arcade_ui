@@ -1,9 +1,7 @@
 #include <cstdio>
 #include <exception>
 #include <fstream>
-
 import arcade.ui;
-
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::fprintf(stderr, "Usage: arcadeui <file.arcuxi>\n");
