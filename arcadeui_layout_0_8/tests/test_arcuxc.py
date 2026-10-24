@@ -14,8 +14,8 @@ class CompilerTests(unittest.TestCase):
         data=arcuxc.compile_ui('<div style="display:flex;width:200px"><span>abc</span><span>xyz</span></div>',SRC)
         magic,version,count,nbytes,sbytes,strbytes,abytes,_,_,sha=arcuxc.HEADER.unpack_from(data)
         self.assertEqual(magic,arcuxc.MAGIC)
-        self.assertEqual((version,count,nbytes,sbytes), (2,3,96,204))
-        self.assertEqual(len(data),arcuxc.HEADER.size+nbytes+sbytes+strbytes+abytes)
+        self.assertEqual((version,count,nbytes,sbytes), (3,3,96,276))
+        self.assertEqual(len(data),arcuxc.HEADER.size+nbytes+sbytes+strbytes+abytes+arcuxc.HEADER.unpack_from(data)[7])
         self.assertEqual(arcuxc.NODE.unpack_from(data,arcuxc.HEADER.size+32)[0],0)
     def test_determinism(self):
         html='<div style="background:#123456"><span data-action="ok">Hello</span></div>'

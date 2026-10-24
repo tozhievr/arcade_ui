@@ -31,9 +31,13 @@ export namespace arcade::ui {
         std::uint32_t display{}, direction{};
         float width{}, height{}, grow{}, shrink{}, gap{}, padding{}, margin{}, font_size{};
         std::uint32_t background{}, foreground{}, flags{}, justify{}, align{}, wrap{}, grid_columns{};
+        float basis{-1}, min_width{-1}, max_width{-1};
+        std::uint32_t track_offset{}, grid_span{1}, track_count{};
     };
     static_assert(sizeof(Node)==32);
-    static_assert(sizeof(Style)==68);
+    static_assert(sizeof(Style)==92);
+    struct Track { std::uint32_t kind{}; float value{}; };
+    static_assert(sizeof(Track)==8);
 
     struct LayoutStats {
         std::uint32_t layout_visits{};
@@ -47,6 +51,7 @@ export namespace arcade::ui {
         std::pmr::vector<std::byte> bytes_;
         std::pmr::vector<Node> nodes_;
         std::pmr::vector<Style> styles_;
+        std::pmr::vector<Track> tracks_;
         std::pmr::vector<Rect> rectangles_;
         std::pmr::vector<DrawCommand> commands_;
         std::pmr::unordered_map<std::string, Callback> callbacks_;
@@ -63,6 +68,16 @@ export namespace arcade::ui {
         bool paint_dirty_{true};
         std::uint32_t strings_start_{}, strings_size_{};
         float viewport_width_{}, viewport_height_{};
+        [[nodiscard]] static float clamp_width(float w,const Style& s) noexcept {
+            if(s.min_width>=0)w=std::max(w,s.min_width);
+            if(s.max_width>=0)w=std::min(w,s.max_width);
+            return std::max(0.f,w);
+        }
+        [[nodiscard]] float flex_basis(std::uint32_t id,bool horizontal) {
+            const auto& s=styles_[nodes_[id].style];
+            return horizontal?clamp_width(s.basis>=0?s.basis:measure(id,true),s):
+                (s.basis>=0?s.basis:measure(id,false));
+        }
         static std::uint32_t u32(const std::byte* p) noexcept {
             return std::uint32_t(std::to_integer<unsigned char>(p[0])) |
                 (std::uint32_t(std::to_integer<unsigned char>(p[1])) << 8) |
@@ -84,14 +99,14 @@ export namespace arcade::ui {
             if (fixed>=0) {
                 (horizontal?measured_width_[id]:measured_height_[id])=fixed;
                 measure_valid_[id]|=bit;
-                return fixed;
+                return horizontal?clamp_width(fixed,s):fixed;
             }
             const float pad=s.padding*2;
             if (!n.child_count){
                 const auto value=pad+(horizontal?float(n.text_size)*s.font_size*0.58f:s.font_size*1.3f);
                 (horizontal?measured_width_[id]:measured_height_[id])=value;
                 measure_valid_[id]|=bit;
-                return value;
+                return horizontal?clamp_width(value,s):value;
             }
             float result=0;
             const bool main=(s.display==1 && ((s.direction==0)==horizontal));
@@ -104,7 +119,7 @@ export namespace arcade::ui {
             result+=pad;
             (horizontal?measured_width_[id]:measured_height_[id])=result;
             measure_valid_[id]|=bit;
-            return result;
+            return horizontal?clamp_width(result,s):result;
         }
         void layout(std::uint32_t id,Rect area) {
             const auto previous=rectangles_[id];
@@ -122,24 +137,72 @@ export namespace arcade::ui {
             const float innerw=std::max(0.f,area.width-2*pad),innerh=std::max(0.f,area.height-2*pad);
             if (s.display==2) {
                 const auto columns=std::max(1u,s.grid_columns);
-                const float cellw=std::max(0.f,(innerw-s.gap*float(columns-1))/float(columns));
-                float cursor_y=area.y+pad;
-                const std::uint32_t rows=(n.child_count+columns-1)/columns;
-                for(std::uint32_t row=0;row<rows;++row){
-                    float row_height=0.f;
-                    for(std::uint32_t col=0;col<columns && row*columns+col<n.child_count;++col){
-                        const auto child=n.first_child+row*columns+col;
-                        const auto& cs=styles_[nodes_[child].style];
-                        row_height=std::max(row_height,measure(child,false)+2*cs.margin);
+                std::vector<float> widths(columns,0.f);
+                float available=std::max(0.f,innerw-s.gap*float(columns-1));
+                std::vector<float> weights(columns,0.f);
+                std::vector<std::uint8_t> flexible(columns,0);
+                float weight_sum=0.f;
+                for(std::uint32_t col=0;col<columns;++col){
+                    const auto& t=tracks_[s.track_offset+col];
+                    if(t.kind==0){widths[col]=t.value;available-=t.value;}
+                    else {
+                        widths[col]=t.kind==2?t.value:0.f;
+                        weights[col]=t.kind==1?t.value:1.f;
+                        flexible[col]=1;
+                        weight_sum+=weights[col];
                     }
-                    for(std::uint32_t col=0;col<columns && row*columns+col<n.child_count;++col){
-                        const auto child=n.first_child+row*columns+col;
-                        const auto& cs=styles_[nodes_[child].style];
-                        const float h=cs.height>=0?cs.height:std::max(0.f,row_height-2*cs.margin);
-                        layout(child,{area.x+pad+float(col)*(cellw+s.gap)+cs.margin,cursor_y+cs.margin,
-                            std::max(0.f,cellw-2*cs.margin),h});
+                }
+                // Resolve fractional tracks with minmax() lower bounds.
+                // Freeze tracks whose minimum exceeds the current fraction unit.
+                for(std::uint32_t iteration=0;iteration<columns && weight_sum>0.f;++iteration){
+                    const float unit=std::max(0.f,available)/weight_sum;
+                    bool frozen=false;
+                    for(std::uint32_t col=0;col<columns;++col){
+                        if(flexible[col] && widths[col]>unit*weights[col]){
+                            available-=widths[col];weight_sum-=weights[col];
+                            flexible[col]=0;frozen=true;
+                        }
                     }
-                    cursor_y+=row_height+s.gap;
+                    if(!frozen)break;
+                }
+                const float unit=weight_sum>0.f?std::max(0.f,available)/weight_sum:0.f;
+                for(std::uint32_t col=0;col<columns;++col){
+                    if(flexible[col])widths[col]=unit*weights[col];
+                }
+                std::vector<float> starts(columns);
+                float xx=area.x+pad;
+                for(std::uint32_t col=0;col<columns;++col){starts[col]=xx;xx+=widths[col]+s.gap;}
+                // AOT nodes are in source order; implicit auto-placement flows across rows.
+                // Tracks spanning several columns occupy their combined width.
+                struct Placement {std::uint32_t child,row,col,span;};
+                std::vector<Placement> placements;
+                std::uint32_t row=0,col=0;
+                for(std::uint32_t j=0;j<n.child_count;++j){
+                    const auto child=n.first_child+j;
+                    const auto& cs=styles_[nodes_[child].style];
+                    if(cs.display==3){layout(child,{});continue;}
+                    const auto span=std::min(columns,std::max(1u,cs.grid_span));
+                    if(col+span>columns){++row;col=0;}
+                    placements.push_back({child,row,col,span});
+                    col+=span;if(col>=columns){++row;col=0;}
+                }
+                std::uint32_t row_count=0;
+                for(const auto& p:placements)row_count=std::max(row_count,p.row+1);
+                std::vector<float> heights(row_count,0.f),ys(row_count,area.y+pad);
+                for(const auto& p:placements){
+                    const auto& cs=styles_[nodes_[p.child].style];
+                    heights[p.row]=std::max(heights[p.row],measure(p.child,false)+2*cs.margin);
+                }
+                for(std::uint32_t r=1;r<row_count;++r)ys[r]=ys[r-1]+heights[r-1]+s.gap;
+                for(const auto& p:placements){
+                    const auto& cs=styles_[nodes_[p.child].style];
+                    float width=0.f;
+                    for(std::uint32_t c=p.col;c<p.col+p.span;++c)width+=widths[c];
+                    width+=s.gap*float(p.span-1);
+                    const auto available_width=std::max(0.f,width-2*cs.margin);
+                    const auto child_width=clamp_width(cs.width>=0?cs.width:available_width,cs);
+                    const auto child_height=cs.height>=0?cs.height:std::max(0.f,heights[p.row]-2*cs.margin);
+                    layout(p.child,{starts[p.col]+cs.margin,ys[p.row]+cs.margin,child_width,child_height});
                 }
                 return;
             }
@@ -155,7 +218,7 @@ export namespace arcade::ui {
                     const auto child=n.first_child+end;
                     const auto& cs=styles_[nodes_[child].style];
                     if(cs.display==3){++end;continue;}
-                    const float b=measure(child,horizontal);
+                    const float b=flex_basis(child,horizontal);
                     const float outer=b+cs.margin*2;
                     const float needed=outer+(end>begin?s.gap:0.f);
                     if(s.wrap && end>begin && basis+needed>available)break;
@@ -178,10 +241,11 @@ export namespace arcade::ui {
                     const auto child=n.first_child+i;
                     const auto& cs=styles_[nodes_[child].style];
                     if(cs.display==3){layout(child,{});continue;}
-                    const float b=measure(child,horizontal);
+                    const float b=flex_basis(child,horizontal);
                     float main=b;
                     if(free>0 && grow_total>0)main+=free*std::max(0.f,cs.grow)/grow_total;
                     if(free<0 && shrink_weight>0)main=std::max(0.f,b+free*b*std::max(0.f,cs.shrink)/shrink_weight);
+                    if(horizontal)main=clamp_width(main,cs);
                     const float preferred_cross=measure(child,!horizontal);
                     const float available_cross=std::max(0.f,cross_space-2*cs.margin);
                     const float cross=s.align==0?available_cross:std::min(available_cross,preferred_cross);
@@ -221,7 +285,7 @@ export namespace arcade::ui {
             paint_dirty_=true;
         }
     public:
-        explicit Document(std::pmr::memory_resource* memory=std::pmr::get_default_resource()):bytes_(memory),nodes_(memory),styles_(memory),rectangles_(memory),commands_(memory),callbacks_(memory),dirty_(memory),measured_width_(memory),measured_height_(memory),measure_valid_(memory){}
+        explicit Document(std::pmr::memory_resource* memory=std::pmr::get_default_resource()):bytes_(memory),nodes_(memory),styles_(memory),tracks_(memory),rectangles_(memory),commands_(memory),callbacks_(memory),dirty_(memory),measured_width_(memory),measured_height_(memory),measure_valid_(memory){}
         [[nodiscard]] static Document load(const std::string& path,std::pmr::memory_resource* memory=std::pmr::get_default_resource()){
             Document result(memory);std::ifstream stream(path,std::ios::binary|std::ios::ate);
             if(!stream)throw std::runtime_error("Cannot open arcuxi");auto end=stream.tellg();if(end<72 || end>std::streamoff(256*1024*1024))throw std::runtime_error("Invalid image size");
@@ -229,19 +293,24 @@ export namespace arcade::ui {
             if(!stream)throw std::runtime_error("Truncated image");const auto* b=result.bytes_.data();
             const std::array<char,8> magic={'A','R','C','U','X','I','\0','\x01'};
             if(std::memcmp(b,magic.data(),8)!=0)throw std::runtime_error("Invalid magic");
-            auto version=u32(b+8), count=u32(b+12), nbytes=u32(b+16),sbytes=u32(b+20),strbytes=u32(b+24),abytes=u32(b+28);
-            if(version!=2||count>1000000||nbytes!=count*sizeof(Node)||sbytes!=count*sizeof(Style))throw std::runtime_error("Invalid header");
-            std::uint64_t total=72ull+nbytes+sbytes+strbytes+abytes;
+            auto version=u32(b+8), count=u32(b+12), nbytes=u32(b+16),sbytes=u32(b+20),strbytes=u32(b+24),abytes=u32(b+28), tbytes=u32(b+32);
+            if(version!=3||count>1000000||nbytes!=count*sizeof(Node)||sbytes!=count*sizeof(Style)||tbytes%sizeof(Track)||tbytes>4096u*8u*count)throw std::runtime_error("Invalid header");
+            std::uint64_t total=72ull+nbytes+sbytes+tbytes+strbytes+abytes;
             if(total!=result.bytes_.size())throw std::runtime_error("Invalid sections");
-            result.strings_start_=72+nbytes+sbytes;result.strings_size_=strbytes;
+            result.strings_start_=72+nbytes+sbytes+tbytes;result.strings_size_=strbytes;
             for(std::uint32_t i=0;i<count;++i){const auto* x=b+72+std::size_t(i)*32;Node n{};
                 n.parent=u32(x);n.first_child=u32(x+4);n.child_count=u32(x+8);n.style=u32(x+12);n.text_offset=u32(x+16);n.text_size=u32(x+20);n.event_offset=u32(x+24);n.event_size=u32(x+28);
                 if(n.style>=count||(n.parent!=0xffffffff && n.parent>=i)||(n.child_count && (n.first_child<=i || std::uint64_t(n.first_child)+n.child_count>count)))throw std::runtime_error("Invalid topology");
                 result.nodes_.push_back(n);(void)result.text(n.text_offset,n.text_size);(void)result.text(n.event_offset,n.event_size);
             }
-            for(std::uint32_t i=0;i<count;++i){auto x=b+72+nbytes+std::size_t(i)*68;Style s{};
-                s.display=u32(x);s.direction=u32(x+4);s.width=f32(x+8);s.height=f32(x+12);s.grow=f32(x+16);s.shrink=f32(x+20);s.gap=f32(x+24);s.padding=f32(x+28);s.margin=f32(x+32);s.font_size=f32(x+36);s.background=u32(x+40);s.foreground=u32(x+44);s.flags=u32(x+48);s.justify=u32(x+52);s.align=u32(x+56);s.wrap=u32(x+60);s.grid_columns=u32(x+64);
-                if(s.display>3||s.direction>1||s.justify>3||s.align>3||s.wrap>1||s.grid_columns>4096)throw std::runtime_error("Invalid style");result.styles_.push_back(s);
+            for(std::uint32_t i=0;i<count;++i){auto x=b+72+nbytes+std::size_t(i)*92;Style s{};
+                s.display=u32(x);s.direction=u32(x+4);s.width=f32(x+8);s.height=f32(x+12);s.grow=f32(x+16);s.shrink=f32(x+20);s.gap=f32(x+24);s.padding=f32(x+28);s.margin=f32(x+32);s.font_size=f32(x+36);s.background=u32(x+40);s.foreground=u32(x+44);s.flags=u32(x+48);s.justify=u32(x+52);s.align=u32(x+56);s.wrap=u32(x+60);s.grid_columns=u32(x+64);s.basis=f32(x+68);s.min_width=f32(x+72);s.max_width=f32(x+76);s.track_offset=u32(x+80);s.grid_span=u32(x+84);s.track_count=u32(x+88);
+                if(s.display>3||s.direction>1||s.justify>3||s.align>3||s.wrap>1||s.grid_columns>4096||s.grid_span<1||s.grid_span>4096||s.track_count!=s.grid_columns||std::uint64_t(s.track_offset)+s.track_count>tbytes/8||!std::isfinite(s.basis)||!std::isfinite(s.min_width)||!std::isfinite(s.max_width))throw std::runtime_error("Invalid style");result.styles_.push_back(s);
+            }
+            for(std::uint32_t i=0;i<tbytes/8;++i){
+                const auto* t=b+72+nbytes+sbytes+std::size_t(i)*8;Track v{u32(t),f32(t+4)};
+                if(v.kind>2||!std::isfinite(v.value)||v.value<0)throw std::runtime_error("Invalid track");
+                result.tracks_.push_back(v);
             }
             result.rectangles_.resize(count);
             result.dirty_.assign(count,1);

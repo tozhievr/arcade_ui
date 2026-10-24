@@ -138,3 +138,27 @@ selected by the node; the current AOT writer emits one style record per node.
 Tested locally using Clang 17 (`-std=c++2b`) and 33 Python tests. The CMake
 configuration targets Clang 23 / CMake 4.5 / Ninja and is not verified with
 those exact versions in this environment.
+
+## v0.8 — explicit Grid tracks and initial Flex sizing
+
+This is a **measured extension of the CSS profile, not a full normative Flexbox/Grid implementation**.
+
+- Binary `.arcuxi` **v3** (v2 intentionally rejected). Each style is now 92 bytes; a standalone 8-byte-per-entry track table is stored after the styles. Header's first reserved u32 stores the track section size. The SHA-256 payload digest is produced by the AOT compiler but **not yet verified by the native loader**.
+- `grid-template-columns`: fixed `<length>px`, fractional `<number>fr`, `minmax(<length>px, 1fr)`, and `repeat(integer, single-track)`; mixed track lists supported. Track sizes are resolved with iterative freezing of fractional tracks whose minimum size exceeds their fractional allocation. Limited implicit row placement and `grid-column: span N` are available.
+- `flex-basis: auto | <length>px`, `min-width` and `max-width` in fixed px or auto are compiled as explicit sizing fields. The runtime uses the basis in its existing grow/shrink algorithm and clamps used widths. This is **not** the full Flexbox flexible-length resolution algorithm (iterative min/max freezing is still missing).
+- Unsupported grammar is rejected by the existing source-context diagnostics rather than silently approximated.
+- Python tests: `python -m unittest discover -s tests -q`. Native geometry test: `runtime_layout_v3`, in addition to `runtime_incremental` and `runtime_smoke`.
+
+### Important limitations
+
+Grid still lacks full intrinsic sizing, min/max-content, multi-axis spanning contributions, dense placement, named lines and explicit start/end placement, row track sizing and auto/min-content semantics. Flexbox still lacks the complete normative min/max loop, percentage resolution, automatic minimum size, baseline alignment and writing modes. This build cannot claim CSS Snapshot 2026 conformance. It accepts an explicitly documented subset of standardized CSS syntax. Layout calculations assume finite sizes; raster quality is not addressed yet.
+
+### v3 wire layout
+
+`header(72) | node[count] (32 bytes each) | style[count] (92 bytes each) | tracks (8 bytes each: u32 kind + f32 value) | utf8 strings | resource records`
+
+Header slots (little endian): magic, version=3, count, node_bytes, style_bytes, string_bytes, resource_bytes, **track_bytes**, reserved, SHA-256. Track kinds: `0=fixed px`, `1=fr weight`, `2=minmax(px,1fr)`; each style contains the track offset and count, plus `grid-column` span.
+
+### Toolchain verification
+
+Clang 17 with `-std=c++2b` compiled and linked the C++ module and native integration tests; project was not run with Clang 23.1.3/CMake 4.5.0-rc1 in the available environment. The intended build remains `cmake --preset debug && cmake --build --preset debug && ctest --test-dir build/debug --output-on-failure`.

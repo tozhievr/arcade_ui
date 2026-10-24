@@ -34,3 +34,7 @@ Arcade UI accepts **standard HTML markup and CSS syntax**, compiled ahead-of-tim
 
 ## Portability and dependencies
 The AOT compiler requires Python 3.11+, `tinycss2>=1.5,<2` and `cssselect2>=0.9,<1`. These **build-time** dependencies do not enter the C++ module runtime. This revision keeps `.arcuxi` v1 layout intact so the native loader can consume existing images.
+
+## v0.8 layout profile additions
+
+Recognized additional declarations: `flex-basis`, `min-width`, `max-width`, `grid-column` (`span N` only), and `grid-template-columns` with fixed px tracks, positive fractional tracks, `minmax(px, 1fr)`, and fixed-count `repeat()`. Parsing follows CSS token syntax; computed behavior is a limited approximation and is not asserted to be specification-complete. Unknown or unsupported forms are hard errors with source context.
