@@ -1,4 +1,4 @@
-# Arcade UI — AOT prototype 0.3
+# Arcade UI — AOT prototype 1.0
 
 Native C++ module runtime and deterministic HTML/CSS to `.arcuxi` compiler. Based on the original ArcadeUI skeleton.
 
@@ -190,3 +190,36 @@ claim full CSS Snapshot 2026 compliance. The binary format stays `.arcuxi` v3.
 Validation in this environment: 39/39 Python tests, native `layout_v3`,
 `incremental`, and `flex_freeze` tests passed under Clang 17 `-std=c++2b`.
 The intended Clang 23.1.3/CMake 4.5 toolchain was not available for testing.
+
+## v1.0 — Text intrinsic measurement foundation
+
+The previous runtime treated `node.text_size` (UTF-8 **byte** count) as the
+number of visible characters, which inflated widths for non-ASCII text.
+
+This version introduces `TextIntrinsic { min_content, max_content, line_height }`
+and `Document::intrinsic_text(node_id)` with a **per-node measurement cache**.
+For leaf nodes, `measure()` now uses the cached max-content width and line height.
+
+`Document::set_text_measurer(TextMeasure callback, void* context)` allows a
+renderer/host to supply accurate shaped-run metrics. Calling it invalidates
+both the intrinsic-text cache and dependent layout measurements. Function
+signature: `TextIntrinsic (*)(void*, std::string_view, float) noexcept`.
+The supplied context and callback must remain alive while in use; results must
+be finite and satisfy `0 <= min_content <= max_content` and `line_height >= 0`.
+The callback must not throw because it is declared `noexcept`.
+
+The built-in fallback handles UTF-8 scalar decoding (not byte lengths), simple
+ASCII whitespace breaks, combining-mark zero advances, and rough full-width
+CJK/emoji approximations. **It is NOT font shaping or normative CSS min/max
+content**: missing features include font faces, kerning, ligatures, script
+shaping, grapheme and UAX #14 line-breaking, hyphenation, bidi, soft wrapping,
+vertical writing, line-height semantics, and actual min-content integration into
+Grid/Flex automatic minimum-size calculations. Treat it as a deterministic
+fallback intended for early-stage testing. HTML/CSS binary format stays v3.
+
+The tests now cover the module's callback/cache invalidation behavior, Unicode
+width handling and basic break opportunities; previous Flex/Grid/incremental
+regression cases remain passing on the locally available Clang 17 (`-std=c++2b`).
+
+Run `python -m unittest discover -s tests -q` and standard CMake/CTest commands
+for the native tests. Clang 23.1.3 and CMake 4.5.0-rc1 were not available here.

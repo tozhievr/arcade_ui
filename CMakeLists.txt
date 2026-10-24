@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.5.0)
-project(ArcadeUI VERSION 0.9.0 LANGUAGES CXX)
+project(ArcadeUI VERSION 1.0.0 LANGUAGES CXX)
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "Clang required")
 endif()
@@ -68,4 +68,21 @@ if(BUILD_TESTING)
     target_link_libraries(arcadeui_flex_freeze_tests PRIVATE arcade_ui)
     add_dependencies(arcadeui_flex_freeze_tests arcuxi_flex_freeze)
     add_test(NAME runtime_flex_freeze COMMAND arcadeui_flex_freeze_tests "${FLEX_FREEZE_GROW}" "${FLEX_FREEZE_SHRINK}")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(arcadeui_text_intrinsics_tests tests/text_intrinsics.cpp)
+    target_compile_options(arcadeui_text_intrinsics_tests PRIVATE -std=c++2d -Wall -Wextra -Wpedantic)
+    target_link_libraries(arcadeui_text_intrinsics_tests PRIVATE arcade_ui)
+    add_dependencies(arcadeui_text_intrinsics_tests arcuxi)
+    set(TEXT_INTRINSIC_BINARY "${CMAKE_CURRENT_BINARY_DIR}/text_intrinsic.arcuxi")
+    add_custom_command(OUTPUT "${TEXT_INTRINSIC_BINARY}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py"
+          "${CMAKE_CURRENT_SOURCE_DIR}/examples/text_intrinsic.html" -o "${TEXT_INTRINSIC_BINARY}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py"
+          "${CMAKE_CURRENT_SOURCE_DIR}/examples/text_intrinsic.html"
+        VERBATIM)
+    add_custom_target(arcuxi_text_intrinsics DEPENDS "${TEXT_INTRINSIC_BINARY}")
+    add_dependencies(arcadeui_text_intrinsics_tests arcuxi_text_intrinsics)
+    add_test(NAME runtime_text_intrinsics COMMAND arcadeui_text_intrinsics_tests "${UI_BINARY}" "${TEXT_INTRINSIC_BINARY}")
 endif()

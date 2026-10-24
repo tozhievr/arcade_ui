@@ -39,6 +39,17 @@ export namespace arcade::ui {
     struct Track { std::uint32_t kind{}; float value{}; };
     static_assert(sizeof(Track)==8);
 
+    // Font metrics in CSS px, before padding/borders. The caller may provide
+    // exact shaped-run measurements (HarfBuzz, DirectWrite, etc.).
+    // max_content: unwrapped inline advance; min_content: longest unbreakable
+    // run. This initial profile handles ASCII whitespace as break opportunities.
+    struct TextIntrinsic {
+        float min_content{};
+        float max_content{};
+        float line_height{};
+    };
+    using TextMeasure = TextIntrinsic (*)(void*, std::string_view, float) noexcept;
+
     struct LayoutStats {
         std::uint32_t layout_visits{};
         std::uint32_t layout_skips{};
@@ -63,6 +74,10 @@ export namespace arcade::ui {
         std::pmr::vector<float> measured_width_;
         std::pmr::vector<float> measured_height_;
         std::pmr::vector<std::uint8_t> measure_valid_;
+        std::pmr::vector<TextIntrinsic> intrinsic_text_;
+        std::pmr::vector<std::uint8_t> intrinsic_valid_;
+        TextMeasure text_measurer_{};
+        void* text_measurer_context_{};
         LayoutStats stats_{};
         bool laid_out_{};
         bool paint_dirty_{true};
@@ -89,6 +104,63 @@ export namespace arcade::ui {
             if (off>strings_size_ || len>strings_size_-off) throw std::runtime_error("Invalid string offset");
             return {reinterpret_cast<const char*>(bytes_.data()+strings_start_+off),len};
         }
+        // UTF-8 scalar iteration. Invalid sequences consume a byte and become
+        // U+FFFD; the AOT compiler is expected to supply valid UTF-8.
+        [[nodiscard]] static TextIntrinsic approximate_text(std::string_view input,float size) noexcept {
+            float line=0.f,longest_line=0.f,word=0.f,longest_word=0.f;
+            for(std::size_t i=0;i<input.size();){
+                const auto lead=static_cast<unsigned char>(input[i]);
+                std::uint32_t cp=0xfffd;
+                std::size_t width=1;
+                if(lead<0x80){cp=lead;}
+                else {
+                    const std::size_t count=lead>=0xf0&&lead<=0xf4?4:lead>=0xe0&&lead<=0xef?3:lead>=0xc2&&lead<=0xdf?2:1;
+                    if(count>1 && i+count<=input.size()){
+                        bool valid=true;std::uint32_t v=lead & (0x7fu>>count);
+                        for(std::size_t k=1;k<count;++k){
+                            const auto c=static_cast<unsigned char>(input[i+k]);
+                            if((c&0xc0u)!=0x80u){valid=false;break;}
+                            v=(v<<6)|(c&0x3fu);
+                        }
+                        if(valid && v>= (count==2?0x80u:count==3?0x800u:0x10000u)
+                           && v<=0x10ffffu && !(v>=0xd800u&&v<=0xdfffu)){
+                            cp=v;width=count;
+                        }
+                    }
+                }
+                i+=width;
+                if(cp=='\n' || cp=='\r'){
+                    longest_line=std::max(longest_line,line);line=0;
+                    longest_word=std::max(longest_word,word);word=0;
+                    continue;
+                }
+                const bool space=cp==' '||cp=='\t';
+                const bool combining=(cp>=0x300&&cp<=0x36f)||(cp>=0x1ab0&&cp<=0x1aff);
+                const bool wide=(cp>=0x1100&&cp<=0x11ff)||(cp>=0x2e80&&cp<=0xa4cf)
+                    ||(cp>=0xac00&&cp<=0xd7ff)||(cp>=0xf900&&cp<=0xfaff)
+                    ||(cp>=0x1f300&&cp<=0x1faff);
+                const float advance=combining?0.f:size*(wide?1.f:space?0.33f:0.58f);
+                line+=advance;
+                if(space){longest_word=std::max(longest_word,word);word=0;}
+                else word+=advance;
+            }
+            return {std::max(longest_word,word),std::max(longest_line,line),size*1.3f};
+        }
+        [[nodiscard]] TextIntrinsic text_intrinsic(std::uint32_t id){
+            if(intrinsic_valid_[id])return intrinsic_text_[id];
+            const auto& n=nodes_[id];
+            const auto& s=styles_[n.style];
+            const auto str=text(n.text_offset,n.text_size);
+            auto value=text_measurer_?text_measurer_(text_measurer_context_,str,s.font_size)
+                :approximate_text(str,s.font_size);
+            if(!std::isfinite(value.min_content)||!std::isfinite(value.max_content)
+                ||!std::isfinite(value.line_height)||value.min_content<0
+                ||value.max_content<value.min_content||value.line_height<0){
+                throw std::runtime_error("Invalid text measurement");
+            }
+            intrinsic_valid_[id]=1;intrinsic_text_[id]=value;
+            return value;
+        }
         [[nodiscard]] float measure(std::uint32_t id,bool horizontal) {
             const auto bit=horizontal?std::uint8_t{1}:std::uint8_t{2};
             if(measure_valid_[id]&bit){++stats_.measure_cache_hits;return horizontal?measured_width_[id]:measured_height_[id];}
@@ -103,7 +175,8 @@ export namespace arcade::ui {
             }
             const float pad=s.padding*2;
             if (!n.child_count){
-                const auto value=pad+(horizontal?float(n.text_size)*s.font_size*0.58f:s.font_size*1.3f);
+                const auto metrics=text_intrinsic(id);
+                const auto value=pad+(horizontal?metrics.max_content:metrics.line_height);
                 (horizontal?measured_width_[id]:measured_height_[id])=value;
                 measure_valid_[id]|=bit;
                 return horizontal?clamp_width(value,s):value;
@@ -333,7 +406,7 @@ export namespace arcade::ui {
             paint_dirty_=true;
         }
     public:
-        explicit Document(std::pmr::memory_resource* memory=std::pmr::get_default_resource()):bytes_(memory),nodes_(memory),styles_(memory),tracks_(memory),rectangles_(memory),commands_(memory),callbacks_(memory),dirty_(memory),measured_width_(memory),measured_height_(memory),measure_valid_(memory){}
+        explicit Document(std::pmr::memory_resource* memory=std::pmr::get_default_resource()):bytes_(memory),nodes_(memory),styles_(memory),tracks_(memory),rectangles_(memory),commands_(memory),callbacks_(memory),dirty_(memory),measured_width_(memory),measured_height_(memory),measure_valid_(memory),intrinsic_text_(memory),intrinsic_valid_(memory){}
         [[nodiscard]] static Document load(const std::string& path,std::pmr::memory_resource* memory=std::pmr::get_default_resource()){
             Document result(memory);std::ifstream stream(path,std::ios::binary|std::ios::ate);
             if(!stream)throw std::runtime_error("Cannot open arcuxi");auto end=stream.tellg();if(end<72 || end>std::streamoff(256*1024*1024))throw std::runtime_error("Invalid image size");
@@ -365,6 +438,8 @@ export namespace arcade::ui {
             result.measured_width_.assign(count,0.f);
             result.measured_height_.assign(count,0.f);
             result.measure_valid_.assign(count,0);
+            result.intrinsic_text_.resize(count);
+            result.intrinsic_valid_.assign(count,0);
             return result;
         }
         void resize(float w,float h){
@@ -383,6 +458,19 @@ export namespace arcade::ui {
             layout(0,{0,0,root.width>=0?root.width:w,root.height>=0?root.height:h});
             laid_out_=true;
             render();
+        }
+        // Invalidate cached text metrics when the font implementation changes.
+        // Callbacks must outlive the Document and return nonnegative finite px.
+        void set_text_measurer(TextMeasure callback,void* context=nullptr){
+            text_measurer_=callback;text_measurer_context_=context;
+            std::fill(intrinsic_valid_.begin(),intrinsic_valid_.end(),0);
+            std::fill(measure_valid_.begin(),measure_valid_.end(),0);
+            if(!nodes_.empty())std::fill(dirty_.begin(),dirty_.end(),1);
+            paint_dirty_=true;
+        }
+        [[nodiscard]] TextIntrinsic intrinsic_text(std::uint32_t id){
+            if(id>=nodes_.size())throw std::out_of_range("Invalid node ID");
+            return text_intrinsic(id);
         }
         void invalidate(std::uint32_t id){mark_layout_dirty(id);}
         void set_size(std::uint32_t id,float width,float height){
