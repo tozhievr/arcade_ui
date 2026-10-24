@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b13">
+  <meta name="description" content="Arcade UI — нативный AOT HTML/CSS UI engine на C++ Modules. Документация, архитектура, API и руководства.">
+  <meta property="og:title" content="Arcade UI — Documentation">
+  <meta property="og:description" content="Compile the interface. Not the browser.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/site.css">
+  <title>Arcade UI — Documentation</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">К основному содержимому</a>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/" aria-label="Arcade UI, главная">
+        <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 3.5 29 26.5h-7l-2.1-4.3H12l-2.1 4.3H3L16 3.5Zm0 10.9-2.3 4.8h4.6L16 14.4Z" fill="currentColor"/></svg></span>
+        <span>Arcade<span class="brand-accent">UI</span></span>
+        <span class="brand-divider"></span>
+        <span class="brand-docs">Docs</span>
+      </a>
+      <div class="top-actions">
+        <button class="search-trigger" id="searchTrigger" type="button" aria-label="Открыть поиск">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.4"/><path d="m15.4 15.4 5.1 5.1"/></svg>
+          <span>Поиск по документации</span><kbd>⌘ K</kbd>
+        </button>
+        <span class="top-status"><span class="status-dot"></span> v1.9 · Experimental</span>
+        <a class="github-link" href="https://github.com/tozhievr/arcade_ui" target="_blank" rel="noopener noreferrer" aria-label="Открыть GitHub">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.1c-3.1.67-3.76-1.31-3.76-1.31-.5-1.28-1.23-1.62-1.23-1.62-1.01-.69.08-.68.08-.68 1.12.08 1.7 1.14 1.7 1.14 1 1.69 2.63 1.2 3.27.91.1-.72.4-1.2.73-1.48-2.47-.28-5.06-1.24-5.06-5.53 0-1.22.43-2.22 1.14-3-.11-.28-.5-1.42.11-2.95 0 0 .94-.3 3.08 1.14A10.7 10.7 0 0 1 12 6.8c.95 0 1.9.13 2.8.38 2.14-1.44 3.07-1.14 3.07-1.14.61 1.53.23 2.67.12 2.95.71.78 1.13 1.78 1.13 3.01 0 4.3-2.59 5.24-5.07 5.51.41.36.77 1.06.77 2.13v3.45c0 .3.2.64.77.53A11.2 11.2 0 0 0 12 .8Z"/></svg>
+        </a>
+        <button class="mobile-menu" id="menuToggle" type="button" aria-label="Открыть меню" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar" aria-label="Навигация по документации">
+      <div class="side-scroll">
+        <div class="side-kicker">DOCUMENTATION <span>01 / 09</span></div>
+        <nav id="navigation"></nav>
+        <div class="side-footer">
+          <span class="side-footer-icon">⌘</span>
+          <div><strong>Open source</strong><small>Built for native interfaces</small></div>
+          <a href="https://github.com/tozhievr/arcade_ui" aria-label="Перейти на GitHub" target="_blank" rel="noopener noreferrer">↗</a>
+        </div>
+      </div>
+    </aside>
+    <main class="content-area" id="main" tabindex="-1"><div id="app"></div></main>
+    <aside class="toc-wrap" aria-label="Содержание страницы"><div class="toc-sticky"><div class="toc-title">ON THIS PAGE</div><nav id="toc"></nav><div class="toc-tip"><span>✦</span> Design for performance.<br>Compile everything you can.</div></div></aside>
+  </div>
+  <footer class="global-footer"><span>© 2026 Arcade UI · Experimental</span><span>Made for native C++ · <a href="https://github.com/tozhievr/arcade_ui">Source on GitHub ↗</a></span></footer>
+  <div class="search-dialog" id="searchDialog" hidden>
+    <div class="search-backdrop" data-close-search></div>
+    <div class="search-panel" role="dialog" aria-modal="true" aria-label="Поиск">
+      <div class="search-input-row"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/></svg><input id="searchInput" type="search" placeholder="Найти раздел, API или команду..." autocomplete="off"><kbd>ESC</kbd></div>
+      <div class="search-results" id="searchResults"></div>
+      <div class="search-bottom">↑ ↓ навигация <span>Enter — перейти · Esc — закрыть</span></div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script defer src="assets/site.js"></script>
+</body>
+</html>

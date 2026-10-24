@@ -1,0 +1,57 @@
+name: Documentation · GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Validate and package docs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate static website
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path("docs")
+          assert (root / "index.html").is_file()
+          assert (root / "assets/site.css").is_file()
+          assert (root / "assets/site.js").is_file()
+          html = (root / "index.html").read_text(encoding="utf-8")
+          for file in re.findall(r'(?:src|href)="(assets/[^"]+)"', html):
+              assert (root / file).is_file(), file
+          assert "__PAGES__" not in (root / "assets/site.js").read_text(encoding="utf-8")
+          for name in ("getting-started", "architecture", "html-css", "arcuxi-format",
+                       "cpp-api", "text-unicode", "diagnostics", "build-ci"):
+              assert (root / "guide" / (name + ".md")).is_file(), name
+          print("Documentation assets and guides verified")
+          PY
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
