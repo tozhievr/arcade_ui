@@ -39,3 +39,18 @@ Added `unicode::resolve_visual_lines(utf8, line_spans, paragraph_direction)` to 
 - Clang 17 `-std=c++2b` + ICU: unicode module and new native test compile/link/run: **PASS**.
 - Python compiler regression suite: **41 tests passed**.
 - Clang 23.1.3/CMake 4.5.0-rc1 and HarfBuzz/FreeType-enabled build: not available for verification here.
+
+## v1.6 — CSS Text line-fitting foundation
+
+Added `src/arcade.ui.text.cppm` (`import arcade.ui.text;`), separately from the existing Unicode module. It exposes `text::fit(text, width, style, measure, context)`, a style profile (`WhiteSpace`, `OverflowWrap`) and `Line`/`Fragment` records. Its input is UTF-8 and fragment offsets point back into the original string. Unicode UAX #14 breaks and per-line UAX #9 runs are supplied by ICU via `arcade.ui.unicode`.
+
+Supported initial cases: basic ASCII whitespace collapsing; forced LF/CRLF lines under `pre`, `pre-wrap`, `pre-line` and `break-spaces`; no-wrap vs wrapping; emergency UTF-8 codepoint splitting under `anywhere` / `break-word`; a measurement callback for line width; rejection of invalid UTF-8, invalid widths and callbacks. Public module interfaces contain no ICU headers.
+
+**Important implementation limits:** This is NOT full CSS Text Level 3/4. The line fitter is a proof-of-concept: it does not yet correctly handle all trailing/leading collapsible whitespace at line boundaries, tabs, soft hyphens, CSS segment-break transformation, word-break/hyphens, grapheme-based emergency breaks, spans/styles crossing text runs, hanging punctuation, line-height/baselines, or script-sensitive shaping/measurement. Its 'anywhere' emergency mode currently splits by Unicode codepoint, which can split a grapheme cluster. Returning visual runs does not mean glyph reordering/shaping is implemented. ICU and a caller-provided width callback are required. It is not yet wired into `Document` layout or the binary CSS style schema; the text module is independently testable and ready for incremental integration. For production display use an actual OpenType backend and cluster-aligned fitting.
+
+### Verified
+
+- Clang 17 (`-std=c++2b`), ICU system libraries: `arcade.ui.unicode` and new `arcade.ui.text` module compiled, linked and executed: **PASS**.
+- New `tests/text_pipeline.cpp`: basic wrap, preformatted hard newline, emergency wrap, mixed bidi and ASCII whitespace collapse: **PASS**.
+- Previous Python suite: **41/41 PASS**.
+- CMake 4.5 / Clang 23.1.3 not available for verification here.
