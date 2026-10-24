@@ -1,4 +1,4 @@
-# Arcade UI — AOT prototype 1.0
+# Arcade UI — AOT prototype 1.2
 
 Native C++ module runtime and deterministic HTML/CSS to `.arcuxi` compiler. Based on the original ArcadeUI skeleton.
 
@@ -239,3 +239,33 @@ for the native tests. Clang 23.1.3 and CMake 4.5.0-rc1 were not available here.
   Unicode UAX#14 or OpenType shaping. It does not yet feed text height back into
   the Flex/Grid arrange pass, and no full CSS intrinsic layout is claimed.
 - Added native `runtime_text_lines` integration test.
+
+## v1.2 — width-constrained text contributions in native layout
+
+This release connects the width-aware text measurement callback to **actual layout
+geometry**, rather than exposing it only as a standalone API:
+
+- For a text-only Grid item, the solver measures its block-size using its
+  final allocated column/span width (and padding). The resulting height
+  determines the row height and following row positions.
+- For a text-only row-direction Flex item, cross-size measurement uses the
+  main size **after** grow/shrink and min/max resolution; wrapped line heights
+  are recomputed from the resulting widths.
+- `TextMeasure` and `TextLineMeasure` now have **independent context pointers**.
+  Swapping the line-breaker doesn't overwrite the intrinsic metric backend's
+  context. This fixes a lifetime/incorrect-dispatch defect in v1.1.
+- The width-aware backend is checked for finite, nonnegative results, positive
+  height on nonempty text, nonzero line count and width within the constraint.
+- Added `runtime_text_geometry` regression (Grid geometry and callback contexts).
+
+**Still not supported:** actual HarfBuzz/FreeType/DirectWrite shaping, UAX #14
+line breaking, CSS whitespace modes and full intrinsic Grid track sizing,
+fragmentation, baseline alignment, rich inline formatting or glyph rasterization.
+The fallback uses heuristic glyph widths and estimates line counts; it does not
+promise typographic accuracy. Backend callbacks are `noexcept` function pointers
+and are owned by the caller. This implementation is a useful integration stage,
+not a spec-conformant CSS text engine.
+
+Run `python -m unittest discover -s tests -q` and build via the presets above.
+The C++ changes were additionally smoke-tested on Clang 17 / `-std=c++2b`.
+Clang 23.1.3 / CMake 4.5.0-rc1 were not available in the verification environment.
