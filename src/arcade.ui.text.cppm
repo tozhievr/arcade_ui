@@ -30,11 +30,6 @@ namespace arcade::ui::text {
         bool preserve_newlines(WhiteSpace w) { return w==WhiteSpace::pre || w==WhiteSpace::pre_wrap || w==WhiteSpace::pre_line || w==WhiteSpace::break_spaces; }
         bool wrap(WhiteSpace w) { return w!=WhiteSpace::nowrap && w!=WhiteSpace::pre; }
         bool blank(char c) { return c==' ' || c=='\t' || c=='\r' || c=='\n' || c=='\f'; }
-        std::uint32_t next_cp(std::string_view s,std::uint32_t p) {
-            if(p>=s.size())return p;
-            unsigned char c=static_cast<unsigned char>(s[p]);
-            return std::min<std::uint32_t>(static_cast<std::uint32_t>(s.size()),p+(c<128?1:c<224?2:c<240?3:4));
-        }
     }
     Layout fit(std::string_view input,float width,Style style,Measure measure,void* ctx) {
         if(!measure)throw std::invalid_argument("Text width callback required");
@@ -47,6 +42,10 @@ namespace arcade::ui::text {
         Layout output;
         Line current;
         std::string visible;
+        // ICU UAX #29: emergency wrapping must never split combining sequences,
+        // emoji modifiers or ZWJ sequences. Iterate graphemes, not code points.
+        const auto graphemes=unicode::grapheme_boundaries(input);
+        std::size_t grapheme_index=0;
         std::uint32_t p=0;
         bool previous_space=false;
         auto push=[&](bool forced){
@@ -65,13 +64,13 @@ namespace arcade::ui::text {
         };
         while(p<input.size()) {
             const auto start=p;
-            const auto end=next_cp(input,p);
+            const auto end=graphemes[++grapheme_index];
             const char c=input[p];
             p=end;
             const bool ascii_ws=(end==start+1 && blank(c));
-            const bool hard=ascii_ws && (c=='\n'||c=='\r') && preserve_newlines(style.white_space);
+            const bool hard=((ascii_ws && (c=='\n'||c=='\r')) || input.substr(start,end-start)=="\r\n") && preserve_newlines(style.white_space);
             if(hard){
-                if(c=='\r' && p<input.size() && input[p]=='\n')++p;
+                if(c=='\r' && p<input.size() && input[p]=='\n') { ++p; ++grapheme_index; }
                 push(true);
                 continue;
             }

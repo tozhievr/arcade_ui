@@ -54,3 +54,13 @@ Supported initial cases: basic ASCII whitespace collapsing; forced LF/CRLF lines
 - New `tests/text_pipeline.cpp`: basic wrap, preformatted hard newline, emergency wrap, mixed bidi and ASCII whitespace collapse: **PASS**.
 - Previous Python suite: **41/41 PASS**.
 - CMake 4.5 / Clang 23.1.3 not available for verification here.
+
+## v1.7 — Grapheme-safe line breaking and Document bridge
+
+- `arcade.ui.unicode`: `grapheme_boundaries(utf8)` uses ICU UAX #29 character boundaries and returns byte offsets in original UTF-8; rejects malformed UTF-8.
+- `arcade.ui.text`: emergency `overflow-wrap` splits at **extended grapheme cluster** boundaries instead of UTF-8 code-point boundaries. This avoids splitting combining accents, emoji modifiers and ZWJ emoji sequences.
+- `arcade.ui.text.document`: non-owning `DocumentAdapter` installs the CSS Text line fitter into the existing `Document::set_line_measurer()` interface. Supply a real font-aware width callback; the adapter has no glyph metrics of its own. The adapter must outlive the attachment, and caller must detach before destruction. Existing `Document` API currently rejects overflowed line widths; the bridge reports such results as an invalid measurement rather than hiding overflow.
+- New regression tests: `runtime_text_graphemes` and `runtime_text_document_bridge`.
+- **Scope:** not a complete CSS Text implementation. Width measurement remains caller-provided; no shaping, style runs, font fallback, full white-space processing, baseline or GPU glyph atlas in this iteration. `Document` CSS properties are not yet mapped automatically to text::Style — the caller provides the style to `DocumentAdapter`.
+- **Verified here:** Clang 17 C++2b manual module builds; ICU 76.1; grapheme test, bridge test against freshly compiled `text_layout_rows.arcuxi`, original text pipeline test; 41/41 Python compiler tests.
+- CMake 4.5 and Clang 23.1.3 unavailable here, so the preset/target build has not been verified.
