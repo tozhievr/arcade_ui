@@ -223,3 +223,19 @@ regression cases remain passing on the locally available Clang 17 (`-std=c++2b`)
 
 Run `python -m unittest discover -s tests -q` and standard CMake/CTest commands
 for the native tests. Clang 23.1.3 and CMake 4.5.0-rc1 were not available here.
+
+## v1.1 — Width-constrained text measurement API (experimental)
+
+- `TextLineLayout`, `TextLineMeasure` and `Document::layout_text(id, width)`
+  let the host measure wrapped text with a real font backend. Results are
+  validated (finite, nonnegative, positive line count, width within constraint).
+- `Document::set_line_measurer` installs a callback. This prototype shares the
+  callback context with `set_text_measurer`: install the intrinsic-measurement
+  callback first, then install the line-measurement callback using the same
+  context. Changing this interface to an owned backend object is recommended.
+- Flex row text leaves now use their estimated `min-content` as an automatic
+  minimum main size unless `min-width` was explicitly set.
+- The built-in line-count fallback is deliberately approximate and is **not**
+  Unicode UAX#14 or OpenType shaping. It does not yet feed text height back into
+  the Flex/Grid arrange pass, and no full CSS intrinsic layout is claimed.
+- Added native `runtime_text_lines` integration test.

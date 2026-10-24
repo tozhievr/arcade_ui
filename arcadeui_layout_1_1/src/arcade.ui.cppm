@@ -49,6 +49,10 @@ export namespace arcade::ui {
         float line_height{};
     };
     using TextMeasure = TextIntrinsic (*)(void*, std::string_view, float) noexcept;
+    // Optional backend for width-constrained line layout. A real shaping backend
+    // can return glyph-derived metrics after line breaking at CSS pixel width.
+    struct TextLineLayout { float width{}, height{}; std::uint32_t line_count{}; };
+    using TextLineMeasure = TextLineLayout (*)(void*, std::string_view, float, float) noexcept;
 
     struct LayoutStats {
         std::uint32_t layout_visits{};
@@ -77,6 +81,7 @@ export namespace arcade::ui {
         std::pmr::vector<TextIntrinsic> intrinsic_text_;
         std::pmr::vector<std::uint8_t> intrinsic_valid_;
         TextMeasure text_measurer_{};
+        TextLineMeasure line_measurer_{};
         void* text_measurer_context_{};
         LayoutStats stats_{};
         bool laid_out_{};
@@ -145,6 +150,15 @@ export namespace arcade::ui {
                 else word+=advance;
             }
             return {std::max(longest_word,word),std::max(longest_line,line),size*1.3f};
+        }
+        [[nodiscard]] static TextLineLayout approximate_lines(TextIntrinsic m,float width) noexcept {
+            // Fallback: no glyph data, so this is an approximate line count.
+            // Prefer external shaping + UAX#14 breaker for production text.
+            const float usable=std::max(1.f,width);
+            if(m.max_content<=0.f)return {0.f,m.line_height,1};
+            const auto lines=static_cast<std::uint32_t>(std::clamp(
+                std::ceil(m.max_content/usable),1.f,65535.f));
+            return {std::min(m.max_content,usable),m.line_height*static_cast<float>(lines),lines};
         }
         [[nodiscard]] TextIntrinsic text_intrinsic(std::uint32_t id){
             if(intrinsic_valid_[id])return intrinsic_text_[id];
@@ -312,7 +326,12 @@ export namespace arcade::ui {
                     const auto& cs=styles_[nodes_[child].style];
                     if(cs.display==3)continue;
                     const float base=flex_basis(child,horizontal);
-                    const float minv=horizontal && cs.min_width>=0?cs.min_width:0.f;
+                    // CSS flex item automatic min main size: at least the
+                    // longest unbreakable run for text-only items. Container
+                    // contributions remain partial until full CSS sizing.
+                    const float intrinsic_min=horizontal && !nodes_[child].child_count
+                        ?text_intrinsic(child).min_content+2*cs.padding:0.f;
+                    const float minv=horizontal?(cs.min_width>=0?cs.min_width:intrinsic_min):0.f;
                     const float maxv=horizontal && cs.max_width>=0?cs.max_width:std::numeric_limits<float>::infinity();
                     items.push_back({child,base,base,std::max(0.f,cs.grow),std::max(0.f,cs.shrink),minv,maxv,false});
                 }
@@ -467,6 +486,28 @@ export namespace arcade::ui {
             std::fill(measure_valid_.begin(),measure_valid_.end(),0);
             if(!nodes_.empty())std::fill(dirty_.begin(),dirty_.end(),1);
             paint_dirty_=true;
+        }
+        void set_line_measurer(TextLineMeasure callback,void* context=nullptr){
+            line_measurer_=callback;
+            // Both measurement callbacks intentionally share a context;
+            // change either callback atomically when replacing the backend.
+            text_measurer_context_=context;
+            if(!nodes_.empty())std::fill(dirty_.begin(),dirty_.end(),1);
+            std::fill(measure_valid_.begin(),measure_valid_.end(),0);
+            paint_dirty_=true;
+        }
+        [[nodiscard]] TextLineLayout layout_text(std::uint32_t id,float width){
+            if(id>=nodes_.size())throw std::out_of_range("Invalid node ID");
+            if(!std::isfinite(width)||width<0)throw std::invalid_argument("Invalid text width");
+            const auto& n=nodes_[id];
+            const auto font_size=styles_[n.style].font_size;
+            const auto str=text(n.text_offset,n.text_size);
+            auto result=line_measurer_?line_measurer_(text_measurer_context_,str,font_size,width)
+                :approximate_lines(text_intrinsic(id),width);
+            if(!std::isfinite(result.width)||!std::isfinite(result.height)
+                ||result.width<0||result.height<0||result.width>width+0.01f
+                ||result.line_count==0)throw std::runtime_error("Invalid line measurement");
+            return result;
         }
         [[nodiscard]] TextIntrinsic intrinsic_text(std::uint32_t id){
             if(id>=nodes_.size())throw std::out_of_range("Invalid node ID");
