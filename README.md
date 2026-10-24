@@ -1,4 +1,4 @@
-# Arcade UI — AOT prototype 1.2
+# Arcade UI — AOT prototype 1.3
 
 Native C++ module runtime and deterministic HTML/CSS to `.arcuxi` compiler. Based on the original ArcadeUI skeleton.
 
@@ -269,3 +269,40 @@ not a spec-conformant CSS text engine.
 Run `python -m unittest discover -s tests -q` and build via the presets above.
 The C++ changes were additionally smoke-tested on Clang 17 / `-std=c++2b`.
 Clang 23.1.3 / CMake 4.5.0-rc1 were not available in the verification environment.
+
+## v1.3 — optional OpenType backend
+
+Added `src/arcade.ui.font.cppm`, a separate native C++ module with private
+FreeType and HarfBuzz headers. `arcade.ui` remains buildable without either
+library. When installed, CMake detects the packages and builds the optional
+`arcade_ui_font` target. Public module usage:
+
+```cpp
+import arcade.ui;
+import arcade.ui.font;
+
+// Font object MUST outlive the document attachment.
+auto document = arcade::ui::Document::load("dashboard.arcuxi");
+arcade::ui::font::OpenType font("path/to/font.ttf");
+font.attach(document);
+document.resize(1280, 720);
+font.detach(document);
+```
+
+`OpenType` computes true OpenType glyph advances using HarfBuzz and FreeType,
+and uses the font's line metrics. This version deliberately uses a **limited
+ASCII-whitespace greedy line breaker**. It does NOT implement UAX #14, bidi
+paragraph resolution, fallback font runs, variable font CSS axes, glyph
+rasterization, or CSS baseline alignment. For unbreakable words it clamps the
+reported line width to the available layout width; true overflow geometry will
+require changes to the existing `TextLineLayout` contract.
+
+Important: attaching the font stores a borrowed pointer in `Document`.
+The font object must not be moved or destroyed while attached. Both callbacks
+are single-threaded (FreeType face size changes between measurements).
+
+Build with `-DARCADE_UI_ENABLE_FONT_BACKEND=ON` (default); missing packages
+simply disable that backend. Set `-DARCADE_UI_ENABLE_FONT_BACKEND=OFF`
+for a dependency-free runtime. The optional backend is **not compiled or
+runtime-tested in the current environment**, because HarfBuzz/FreeType
+headers are unavailable. Existing 41 Python tests pass.
