@@ -6,6 +6,10 @@ on:
     paths: ['.github/workflows/tidy-autofix.yml']
   workflow_dispatch:
 
+concurrency:
+  group: tidy-autofix-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -41,20 +45,23 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, pathlib, subprocess
+          from concurrent.futures import ThreadPoolExecutor, as_completed
           root=pathlib.Path.cwd()
           db=json.loads((root/'build/native/compile_commands.json').read_text())
           paths=sorted({pathlib.Path(x['file']).resolve() for x in db
                         if pathlib.Path(x['file']).resolve().is_relative_to(root/'src')
                         or pathlib.Path(x['file']).resolve().is_relative_to(root/'tests')})
-          for path in paths:
-              print('Tidy fixes:',path.relative_to(root),flush=True)
+          def fix(path):
               try:
                   r=subprocess.run(['clang-tidy-21','-p','build/native','--fix','--quiet',str(path)],
-                      text=True,capture_output=True,timeout=45)
-                  if r.returncode:
-                      print('Analyzer returned',r.returncode, r.stderr[-500:])
+                      text=True,capture_output=True,timeout=60)
+                  return str(path.relative_to(root)),r.returncode,r.stderr[-500:]
               except subprocess.TimeoutExpired:
-                  print('Timed out:',path.relative_to(root))
+                  return str(path.relative_to(root)),124,'Timeout (no file suppressed)'
+          with ThreadPoolExecutor(max_workers=4) as pool:
+              for job in as_completed([pool.submit(fix,path) for path in paths]):
+                  name,status,error=job.result()
+                  print('Tidy fixes:',name,'status',status,error,flush=True)
           PY
           python3 tools/clang-format-all.py --fix --binary clang-format-21
       - name: Validate generated source builds and tests
