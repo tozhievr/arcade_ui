@@ -9,7 +9,11 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_library(arcade_ui STATIC)
-target_sources(arcade_ui PUBLIC FILE_SET CXX_MODULES FILES src/arcade.ui.cppm)
+target_sources(arcade_ui PUBLIC FILE_SET CXX_MODULES FILES
+    src/arcade.ui.cppm
+    src/contracts.cppm
+    src/app.cppm
+    src/arcade.ui.mock.cppm)
 target_compile_options(arcade_ui PRIVATE -std=c++2d -Wall -Wextra -Wpedantic)
 add_executable(arcadeui src/main.cpp)
 target_compile_options(arcadeui PRIVATE -std=c++2d -Wall -Wextra -Wpedantic)
@@ -234,4 +238,19 @@ if(TARGET arcade_ui_font)
     if(TARGET arcadeui_font_backend_tests)
         set_tests_properties(runtime_font_backend PROPERTIES SKIP_RETURN_CODE 77)
     endif()
+endif()
+
+# Native rendering contract / AppBuilder integration, no GPU required.
+if(BUILD_TESTING)
+    add_executable(arcadeui_app_contracts_tests)
+    target_sources(arcadeui_app_contracts_tests PRIVATE
+        tests/app_contracts_main.cpp)
+    target_sources(arcadeui_app_contracts_tests PRIVATE
+        FILE_SET CXX_MODULES FILES tests/app_contracts.cppm)
+    target_compile_options(arcadeui_app_contracts_tests PRIVATE
+        -std=c++2d -Wall -Wextra -Wpedantic)
+    target_link_libraries(arcadeui_app_contracts_tests PRIVATE arcade_ui)
+    add_dependencies(arcadeui_app_contracts_tests arcuxi)
+    add_test(NAME runtime_app_contracts
+        COMMAND arcadeui_app_contracts_tests "${UI_BINARY}")
 endif()

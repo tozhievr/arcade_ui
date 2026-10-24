@@ -1,35 +1,33 @@
-export module contracts;
-
-import std;
+module;
+#include <concepts>
+#include <cstdint>
+#include <span>
+export module arcade.ui.contracts;
+import arcade.ui;
 
 export namespace arcade::ui {
-    template <class T>
-    concept RenderDriver = requires(
-        T rd, const T& crd,                      /* concept                      */
-        float w, float h,                        /* size                         */
-        std::string_view text,                   /* text                         */
-        std::vector<
-            std::byte, 
-            std::pmr::monotonic_buffer_resource
-        > res                                     /* vector unpacked resource     */
-    ) {
-        std::constructible_from<T>;
-
-        { rd.panel(w, h) } -> std::same_as<T&>;
-        { rd.text(text)  } -> std::same_as<T&>;
-        { rd.image(res)  } -> std::same_as<T&>;
+    struct FrameInfo {
+        float width{};
+        float height{};
+        std::uint64_t index{};
     };
 
-    template <class T, class D>
-    concept App = requires(
-        T a, const T& ca,       /* concept                  */
-        int argc, char** argv,  /* app.run()                */
-        D&& driver              /* app.setRenderDriver()    */
-    ) {
-        std::constructible_from<T>;
+    // The backend receives immutable, already-laid-out paint commands.
+    // No DOM, CSS or HTML parsing is part of this contract.
+    template<class D>
+    concept RenderDriver = std::movable<D> &&
+        requires(D& driver, FrameInfo frame, std::span<const DrawCommand> batch) {
+            { driver.begin_frame(frame) } noexcept -> std::same_as<bool>;
+            { driver.submit(batch) } noexcept -> std::same_as<bool>;
+            { driver.end_frame() } noexcept -> std::same_as<bool>;
+        };
 
-        { a.run(argc, argv)         }           -> std::same_as<bool>;
-        { a.setRenderDriver(driver) }           -> std::same_as<T&>;
-        { ca.version()              } noexcept  -> std::same_as<const char*>;
-    } && RenderDriver<D>;
-} // namespace arcade::ui
+    template<class A, class D>
+    concept UiApplication = RenderDriver<D> &&
+        requires(A& app, float w, float h) {
+            { app.frame() } -> std::same_as<bool>;
+            { app.resize(w, h) } -> std::same_as<bool>;
+            { app.document() } -> std::same_as<Document&>;
+            { app.render_driver() } -> std::same_as<D&>;
+        };
+}
