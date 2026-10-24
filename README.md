@@ -162,3 +162,31 @@ Header slots (little endian): magic, version=3, count, node_bytes, style_bytes, 
 ### Toolchain verification
 
 Clang 17 with `-std=c++2b` compiled and linked the C++ module and native integration tests; project was not run with Clang 23.1.3/CMake 4.5.0-rc1 in the available environment. The intended build remains `cmake --preset debug && cmake --build --preset debug && ctest --test-dir build/debug --output-on-failure`.
+
+## v0.9 — iterative Flex min/max freezing
+
+The runtime now resolves **a supported subset** of flexible main sizes with
+iterative freezing, rather than distributing grow/shrink once and clamping the
+result. For each flex line it (1) computes base sizes and free space, (2)
+distributes positive free space using `flex-grow` or negative free space using
+scaled `flex-shrink` weights, (3) clamps to explicit `min-width`/`max-width`
+in row layout, (4) freezes violators and redistributes among remaining items.
+`justify-content` uses any remaining positive free space after the resolution.
+
+Two native regression cases in `tests/flex_freeze.cpp` verify:
+
+- **Growth:** `300px` row, two `100px` bases, equal grow factors,
+  first element `max-width:110px` → widths `110px` and `190px`.
+- **Shrinkage:** `200px` row, two `200px` bases, equal shrink factors,
+  first element `min-width:160px` → widths `160px` and `40px`.
+
+The project still has **approximate intrinsic measurement** (character-count
+heuristic, no font shaping) and is **not yet a CSS-conformant Flexbox engine**.
+The automatic minimum-size behavior, percent resolution, cross-axis min/max,
+line-breaking nuances, min-content/max-content, multi-pass intrinsic layout,
+and several edge cases are not implemented. This work intentionally does not
+claim full CSS Snapshot 2026 compliance. The binary format stays `.arcuxi` v3.
+
+Validation in this environment: 39/39 Python tests, native `layout_v3`,
+`incremental`, and `flex_freeze` tests passed under Clang 17 `-std=c++2b`.
+The intended Clang 23.1.3/CMake 4.5 toolchain was not available for testing.

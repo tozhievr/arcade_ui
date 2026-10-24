@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.5.0)
-project(ArcadeUI VERSION 0.8.0 LANGUAGES CXX)
+project(ArcadeUI VERSION 0.9.0 LANGUAGES CXX)
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "Clang required")
 endif()
@@ -52,4 +52,20 @@ if(BUILD_TESTING)
     target_link_libraries(arcadeui_layout_v3_tests PRIVATE arcade_ui)
     add_dependencies(arcadeui_layout_v3_tests arcuxi_layout_v3)
     add_test(NAME runtime_layout_v3 COMMAND arcadeui_layout_v3_tests "${GRID_BINARY}" "${FLEX_BINARY}")
+endif()
+
+if(BUILD_TESTING)
+    set(FLEX_FREEZE_GROW "${CMAKE_CURRENT_BINARY_DIR}/flex_freeze.arcuxi")
+    set(FLEX_FREEZE_SHRINK "${CMAKE_CURRENT_BINARY_DIR}/flex_shrink.arcuxi")
+    add_custom_command(OUTPUT "${FLEX_FREEZE_GROW}" "${FLEX_FREEZE_SHRINK}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py" "${CMAKE_CURRENT_SOURCE_DIR}/examples/flex_freeze.html" -o "${FLEX_FREEZE_GROW}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py" "${CMAKE_CURRENT_SOURCE_DIR}/examples/flex_shrink.html" -o "${FLEX_FREEZE_SHRINK}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py" "${CMAKE_CURRENT_SOURCE_DIR}/examples/flex_freeze.html" "${CMAKE_CURRENT_SOURCE_DIR}/examples/flex_shrink.html"
+        VERBATIM)
+    add_custom_target(arcuxi_flex_freeze DEPENDS "${FLEX_FREEZE_GROW}" "${FLEX_FREEZE_SHRINK}")
+    add_executable(arcadeui_flex_freeze_tests tests/flex_freeze.cpp)
+    target_compile_options(arcadeui_flex_freeze_tests PRIVATE -std=c++2d -Wall -Wextra -Wpedantic)
+    target_link_libraries(arcadeui_flex_freeze_tests PRIVATE arcade_ui)
+    add_dependencies(arcadeui_flex_freeze_tests arcuxi_flex_freeze)
+    add_test(NAME runtime_flex_freeze COMMAND arcadeui_flex_freeze_tests "${FLEX_FREEZE_GROW}" "${FLEX_FREEZE_SHRINK}")
 endif()
