@@ -19,6 +19,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: format-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
