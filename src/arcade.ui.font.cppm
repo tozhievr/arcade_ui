@@ -13,6 +13,9 @@ module;
 #include <hb-ft.h>
 export module arcade.ui.font;
 export import arcade.ui;
+#ifdef ARCADE_UI_HAS_UNICODE
+import arcade.ui.unicode;
+#endif
 
 export namespace arcade::ui::font {
     // Deliberately small, standalone OpenType backend. The implementation owns
@@ -81,8 +84,15 @@ namespace arcade::ui::font {
     TextIntrinsic OpenType::intrinsic(std::string_view t,float px){
         state_->size(px);
         float widest=0,word=0;
-        // Split at ASCII white space for the initial wrapping profile.
-        // Each word is shaped as a unit, preserving intra-word kerning.
+#ifdef ARCADE_UI_HAS_UNICODE
+        // UAX #14 break opportunities. This does not implement CSS white-space
+        // collapsing or bidi shaping; these require style-aware text runs.
+        const auto analysis=unicode::analyze(t);
+        for(std::size_t i=1;i<analysis.breaks.size();++i){
+            const auto a=analysis.breaks[i-1],b=analysis.breaks[i];
+            word=std::max(word,state_->advance(t.substr(a,b-a)));
+        }
+#else
         std::size_t pos=0;
         while(pos<t.size()){
             if(t[pos]==' '||t[pos]=='\n'||t[pos]=='\t'||t[pos]=='\r'){++pos;continue;}
@@ -91,7 +101,8 @@ namespace arcade::ui::font {
             word=std::max(word,state_->advance(t.substr(pos,e-pos)));
             pos=e;
         }
-        pos=0;
+#endif
+        std::size_t pos=0;
         while(pos<=t.size()){
             auto e=t.find('\n',pos);
             if(e==std::string_view::npos)e=t.size();
@@ -106,8 +117,25 @@ namespace arcade::ui::font {
         state_->size(px);
         float used=0,maximum=0;
         std::uint32_t count=1;
-        // Greedy wrapping at ASCII whitespace. A UAX#14 breaker is needed for
-        // full CSS text layout; this backend implements accurate glyph advances.
+#ifdef ARCADE_UI_HAS_UNICODE
+        const auto analysis=unicode::analyze(t);
+        for(std::size_t i=1;i<analysis.breaks.size();++i){
+            const auto a=analysis.breaks[i-1],b=analysis.breaks[i];
+            const auto part=t.substr(a,b-a);
+            // ICU returns forced boundaries at newline. A proper CSS white-space
+            // processor is still needed for collapse/preserve semantics.
+            const auto newline=part.find('\n');
+            const auto segment=part.substr(0,newline);
+            const float w=state_->advance(segment);
+            if(used>0 && used+w>available){
+                maximum=std::max(maximum,used);used=0;++count;
+            }
+            used+=w;
+            if(newline!=std::string_view::npos){
+                maximum=std::max(maximum,used);used=0;++count;
+            }
+        }
+#else
         std::size_t begin=0;
         while(begin<t.size()){
             if(t[begin]=='\n'){
@@ -122,13 +150,14 @@ namespace arcade::ui::font {
             if(used>0 && used+space+word_width>available){
                 maximum=std::max(maximum,used);used=0;++count;
             }
-            // Overflow for unbreakable words is allowed by CSS; report
-            // clamped painted width for the current Document validation API.
-            used=std::min(available,used+(used>0?space:0)+word_width);
+            used+=(used>0?space:0)+word_width;
             begin=end;
         }
+#endif
         maximum=std::max(maximum,used);
-        return {maximum,state_->line_height()*count,count};
+        // Existing Document API requires painted width <= constraint, despite
+        // CSS overflow being permitted for unbreakable runs.
+        return {std::min(available,maximum),state_->line_height()*count,count};
     }
     TextIntrinsic OpenType::intrinsic_cb(void* context,std::string_view text,float px) noexcept {
         try{return static_cast<OpenType*>(context)->intrinsic(text,px);}
