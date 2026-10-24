@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
+<rect x="0" y="0" width="960" height="540" fill="#151823" fill-opacity="1"/>
+<rect x="20" y="20" width="920" height="70" fill="#23283a" fill-opacity="1"/>
+<text x="36" y="52" font-size="16" fill="#ffffff">Arcade UI Dashboard</text>
+<text x="228.32" y="52" font-size="16" fill="#ffffff">Refresh</text>
+<rect x="20" y="106" width="454" height="120" fill="#343a56" fill-opacity="1"/>
+<text x="20" y="122" font-size="16" fill="#ffffff">FPS: 144</text>
+<rect x="486" y="106" width="454" height="120" fill="#343a56" fill-opacity="1"/>
+<text x="486" y="122" font-size="16" fill="#ffffff">Frame: 6.94 ms</text>
+<rect x="20" y="238" width="454" height="120" fill="#343a56" fill-opacity="1"/>
+<text x="20" y="254" font-size="16" fill="#ffffff">GPU: RTX</text>
+</svg>
