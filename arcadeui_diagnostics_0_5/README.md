@@ -50,3 +50,46 @@ python -m unittest discover -s tests -v
 ```
 
 Diagnostic JSON fields: `severity`, `code`, `message`, `location` (`file`, `line`, `column`, `length`), `hint`, `notes`. Paths/positions are intended for IDE integration. This is a first diagnostics implementation: positions for CSS created by nontrivial HTML normalization, repeated nested CSS blocks, and malformed tokenization require refinement; a full WHATWG tokenizer/parser and lossless CSS source map are not implemented yet. Unsupported CSS remains rejected by design.
+
+## v0.5 — multi-diagnostic collection and contextual source spans
+
+The AOT compiler reports **multiple independent errors** in one invocation. CSS
+parsing continues after invalid declarations, selectors and unsupported at-rules;
+HTML parsing skips unsupported/forbidden subtrees (including `<script>`) and
+continues checking following elements. Value checking continues per CSS property.
+
+* Source positions are mapped to original HTML and `<style>` text using tinycss2
+  token coordinates and local offsets (not global substring searches). Repeated
+  declarations, separate style blocks, inline styles and Unicode positions are
+  covered by tests. Forbidden inline event handler names get attribute-sized spans.
+* CLI `--max-errors=N` (default 100) bounds diagnostics. No binary output is
+  written if errors are present. Existing output files are **not automatically
+  deleted** on compilation failure; consumers should check the exit status.
+* `--diagnostic-format=json` now returns a **JSON object with multiple errors**:
+  `{ "version": 1, "diagnostics": [...], "summary": { "errors": N } }`.
+  Each `location` additionally has `endLine` and `endColumn` (1-based Unicode
+  codepoint columns). This is a deliberate breaking change from v0.4's single
+  diagnostic JSON object. For LSP clients, convert codepoint columns to UTF-16
+  code units; do not pass them through unchanged when astral symbols are present.
+* Human diagnostics display each error with surrounding context, source carets,
+  suggestion and notes, followed by the total count.
+
+Run all Python tests:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+### Remaining scope limitations
+
+The source mapping is **not a full lossless WHATWG HTML/CSS source map**.
+HTMLParser normalizes attribute entities; CSS `style=` values with character
+references may have column drift; comment stripping and certain CSS escaped
+identifiers may change positions in edge cases. Unsupported HTML constructs do
+not undergo browser-standard HTML error recovery; malformed nested markup may
+still stop semantic analysis. External linked CSS files are not supported in the
+compiler. These limitations are separate from the two v0.4 roadmap items:
+normal source-level diagnostics and multi-error reporting are implemented, but
+full standards-level source fidelity is not yet claimed.
+
+Native runtime and Flex/Grid are **unchanged** from the previous prototype.
