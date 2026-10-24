@@ -1,8 +1,8 @@
-#include <cstdio>
-#include <exception>
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 #include <string_view>
 #include <vector>
 import arcade.ui.text;
@@ -27,10 +27,10 @@ int main() {
             }
         assert(lines.lines.size() >= 3);
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "Unexpected test failure: %s\\n", error.what());
+        std::fprintf(stderr, "Unexpected test failure: %s\n", error.what());
         return 1;
     } catch (...) {
-        std::fputs("Unexpected non-standard test exception\\n", stderr);
+        std::fputs("Unexpected non-standard test exception\n", stderr);
         return 1;
     }
 }

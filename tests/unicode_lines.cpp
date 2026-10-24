@@ -1,6 +1,6 @@
-#include <exception>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,18 +23,21 @@ int main() {
         }
         check(rtl, "second line RTL");
         const std::string emoji = "a😀b";
-        auto e = resolve_visual_lines(emoji, {{0, 5}, {5, static_cast<std::uint32_t>(emoji.size())}});
+        auto e =
+            resolve_visual_lines(emoji, {{0, 5}, {5, static_cast<std::uint32_t>(emoji.size())}});
         check(e.size() == 2, "emoji lines");
         try {
             (void)resolve_visual_lines(emoji, {{0, 2}});
             return 2;
-        } catch (const std::invalid_argument&) { std::puts("Expected invalid Unicode input rejected"); }
+        } catch (const std::invalid_argument&) {
+            std::puts("Expected invalid Unicode input rejected");
+        }
         std::puts("per-line bidi PASS");
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "Unexpected test failure: %s\\n", error.what());
+        std::fprintf(stderr, "Unexpected test failure: %s\n", error.what());
         return 1;
     } catch (...) {
-        std::fputs("Unexpected non-standard test exception\\n", stderr);
+        std::fputs("Unexpected non-standard test exception\n", stderr);
         return 1;
     }
 }

@@ -1,7 +1,7 @@
-#include <cstdio>
-#include <exception>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <exception>
 #include <string_view>
 import arcade.ui;
 import arcade.ui.text.document;
@@ -23,10 +23,10 @@ int main(int argc, char** argv) {
         assert(lines.line_count >= 1 && std::isfinite(lines.height));
         adapter.detach(document);
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "Unexpected test failure: %s\\n", error.what());
+        std::fprintf(stderr, "Unexpected test failure: %s\n", error.what());
         return 1;
     } catch (...) {
-        std::fputs("Unexpected non-standard test exception\\n", stderr);
+        std::fputs("Unexpected non-standard test exception\n", stderr);
         return 1;
     }
 }

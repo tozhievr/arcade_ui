@@ -21,10 +21,10 @@ int main() {
         auto e = fit("a  b", 100, {}, measure, nullptr);
         assert(e.lines[0].width == 30);
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "Unexpected test failure: %s\\n", error.what());
+        std::fprintf(stderr, "Unexpected test failure: %s\n", error.what());
         return 1;
     } catch (...) {
-        std::fputs("Unexpected non-standard test exception\\n", stderr);
+        std::fputs("Unexpected non-standard test exception\n", stderr);
         return 1;
     }
 }

@@ -1,6 +1,6 @@
-#include <exception>
 #include <algorithm>
 #include <cstdio>
+#include <exception>
 #include <stdexcept>
 #include <string>
 import arcade.ui.unicode;
@@ -23,7 +23,8 @@ int main() {
             const std::string text = "你好世界";
             auto a = analyze(text);
             require(a.breaks.front() == 0 && a.breaks.back() == text.size(), "CJK endpoints");
-            require(std::find(a.breaks.begin(), a.breaks.end(), 3) != a.breaks.end(), "CJK line break");
+            require(std::find(a.breaks.begin(), a.breaks.end(), 3) != a.breaks.end(),
+                    "CJK line break");
             for (auto b : a.breaks)
                 require(b % 3 == 0, "UTF8 boundary");
         }
@@ -47,13 +48,15 @@ int main() {
         try {
             (void)analyze(std::string("\xC3\x28", 2));
             return 2;
-        } catch (const std::invalid_argument&) { std::puts("Expected invalid Unicode input rejected"); }
+        } catch (const std::invalid_argument&) {
+            std::puts("Expected invalid Unicode input rejected");
+        }
         std::puts("unicode analysis PASS");
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "Unexpected test failure: %s\\n", error.what());
+        std::fprintf(stderr, "Unexpected test failure: %s\n", error.what());
         return 1;
     } catch (...) {
-        std::fputs("Unexpected non-standard test exception\\n", stderr);
+        std::fputs("Unexpected non-standard test exception\n", stderr);
         return 1;
     }
 }

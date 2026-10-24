@@ -1,6 +1,6 @@
+#include <cstdint>
 #include <cstdio>
 #include <exception>
-#include <cstdint>
 #include <stdexcept>
 import arcade.ui.text.runs;
 import arcade.ui.unicode;
@@ -10,7 +10,8 @@ using namespace arcade::ui;
 int main() {
     try {
         constexpr std::string_view mixed = "Hello 世界 שלום!";
-        auto lines = text::segment_visual_lines(mixed, {{0, static_cast<std::uint32_t>(mixed.size())}});
+        auto lines =
+            text::segment_visual_lines(mixed, {{0, static_cast<std::uint32_t>(mixed.size())}});
         assert(lines.size() == 1);
         assert(lines[0].runs.size() >= 3);
         bool latin = false, cjk = false, rtl = false;
@@ -28,7 +29,8 @@ int main() {
         constexpr std::string_view two = "abc\nשלום";
         auto separate =
             text::segment_visual_lines(two, {{0, 3}, {4, static_cast<std::uint32_t>(two.size())}});
-        assert(separate.size() == 2 && separate[0].runs.size() >= 1 && separate[1].runs.size() >= 1);
+        assert(separate.size() == 2 && separate[0].runs.size() >= 1 &&
+               separate[1].runs.size() >= 1);
         assert(separate[0].runs[0].begin == 0 && separate[0].runs[0].end == 3);
         assert(separate[1].runs[0].begin == 4 && separate[1].runs[0].end == two.size());
         bool rejected = false;
@@ -39,10 +41,10 @@ int main() {
         }
         assert(rejected);
     } catch (const std::exception& error) {
-        std::fprintf(stderr, "Unexpected test failure: %s\\n", error.what());
+        std::fprintf(stderr, "Unexpected test failure: %s\n", error.what());
         return 1;
     } catch (...) {
-        std::fputs("Unexpected non-standard test exception\\n", stderr);
+        std::fputs("Unexpected non-standard test exception\n", stderr);
         return 1;
     }
 }
