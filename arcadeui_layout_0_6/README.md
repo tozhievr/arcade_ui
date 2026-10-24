@@ -19,14 +19,14 @@ AOT standalone compilation: `python tools/arcuxc.py examples/dashboard.html -o d
 
 - HTML subset parser, void elements, `<style>` blocks, and native `data-action` event IDs; `script` and inline JS event attributes rejected.
 - CSS tokenization using tinycss2 and complex selectors using cssselect2; author cascade with specificity and `!important`; numeric px values, limited Flex row/column and basic Grid columns.
-- Deterministic little-endian binary v1, relative string offsets, SHA-256 payload checksum from compiler, packed assets.
+- Deterministic little-endian binary v2, relative string offsets, SHA-256 payload checksum from compiler, packed assets.
 - Breadth-first densely-packed topology (contiguous siblings), PMR storage, native module, layout-to-draw batch.
 - Callback ID dispatch via `function pointer + context`, hit testing, responsive recomputation via `resize`.
 - Python compiler unit tests (10 cases) and runtime smoke test.
 
 ## Limitations / next stage
 
-Not a full browser engine: no complex CSS selectors, box sizing variations, `minmax`, intrinsic Grid tracks, CSS percentages, wrapping Flex, accessibility tree, font shaping, animations, or GPU renderer yet. Currently the runtime generates draw commands and can export an SVG preview; no window or GPU rendering. Assets are packed but aren't decoded/rendered. Coroutine input scheduler and dependency-based incremental layout are future work. SHA-256 written by compiler is not yet revalidated at runtime. Format isn't hardened for untrusted images: validate further before loading external content. Text width is approximated. Grid uses heuristic square-column auto placement. `display:none` currently does not completely remove descendants from hit-testing. Intended as foundation, not CSS specification conformance.
+Not a full browser engine: no complex CSS selectors, box sizing variations, `minmax`, intrinsic Grid tracks, CSS percentages, wrapping Flex, accessibility tree, font shaping, animations, or GPU renderer yet. Currently the runtime generates draw commands and can export an SVG preview; no window or GPU rendering. Assets are packed but aren't decoded/rendered. Coroutine input scheduler and dependency-based incremental layout are future work. SHA-256 written by compiler is not yet revalidated at runtime. Format isn't hardened for untrusted images: validate further before loading external content. Text width is approximated. Grid uses explicit equal-fraction columns. `display:none` descendants are omitted from drawing; event/hit-testing behavior remains limited. Intended as foundation, not CSS specification conformance.
 
 The original `src/app.cppm` and `src/contracts.cppm` are preserved for reference but excluded from build until reworked.
 
@@ -92,4 +92,15 @@ compiler. These limitations are separate from the two v0.4 roadmap items:
 normal source-level diagnostics and multi-error reporting are implemented, but
 full standards-level source fidelity is not yet claimed.
 
-Native runtime and Flex/Grid are **unchanged** from the previous prototype.
+## v0.6 — Flex/Grid AOT layout profile
+
+- Binary image version **2**, style record expanded 52 → 68 bytes to store four additional layout fields; v1 images are intentionally rejected rather than misinterpreted.
+- CSS: `justify-content: flex-start | start | center | flex-end | end | space-between`, `align-items: stretch | flex-start | start | center | flex-end | end`, `flex-wrap: nowrap | wrap`, and `grid-template-columns: 1fr 1fr ... | repeat(N, 1fr)` (N ≤ 4096).
+- C++ renderer: explicit equal-fraction Grid columns, wrapping flex lines, simple main/cross-axis alignment, early rejection of malformed layout styles.
+- CLI native runtime `arcadeui <file.arcuxi> --geometry` exposes node geometry for deterministic integration tests.
+- `display:none` descendants are excluded from draw commands.
+
+**Not standards-complete:** Flexbox and Grid still lack `flex-basis`, min/max constraints, `min-content/max-content`, auto-margin behavior, baseline alignment, percentage resolution, Grid spanning, named lines, mixed track types, implicit/explicit track sizing algorithms, and correct general-purpose sizing. Text uses an approximate width. No incremental dirty-graph engine yet. This iteration is a tested, explicitly limited layout implementation, not CSS conformance.
+
+Build with Clang 23 + CMake 4.5 as above. Clang 17 `-std=c++2b` smoke verification is also possible by direct compiler invocation.
+

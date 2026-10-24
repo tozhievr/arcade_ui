@@ -30,10 +30,10 @@ export namespace arcade::ui {
     struct Style {
         std::uint32_t display{}, direction{};
         float width{}, height{}, grow{}, shrink{}, gap{}, padding{}, margin{}, font_size{};
-        std::uint32_t background{}, foreground{}, flags{};
+        std::uint32_t background{}, foreground{}, flags{}, justify{}, align{}, wrap{}, grid_columns{};
     };
     static_assert(sizeof(Node)==32);
-    static_assert(sizeof(Style)==52);
+    static_assert(sizeof(Style)==68);
 
     class Document {
         std::pmr::vector<std::byte> bytes_;
@@ -78,38 +78,88 @@ export namespace arcade::ui {
             if(s.display==3 || !n.child_count)return;
             const float pad=s.padding;
             const float innerw=std::max(0.f,area.width-2*pad),innerh=std::max(0.f,area.height-2*pad);
-            const bool grid=s.display==2;
-            bool horizontal=grid || (s.display==1 && s.direction==0);
-            float available=horizontal?innerw:innerh;
-            const std::uint32_t columns=grid?std::max(1u,static_cast<std::uint32_t>(std::ceil(std::sqrt(float(n.child_count))))):n.child_count;
-            if(grid){
-                float cellw=std::max(0.f,(innerw-s.gap*float(columns-1))/float(columns));
-                float rowy=area.y+pad,rowh=0;
-                for(std::uint32_t i=0;i<n.child_count;++i){
-                    auto child=n.first_child+i;auto& cs=styles_[nodes_[child].style];
-                    if(i && i%columns==0){rowy+=rowh+s.gap;rowh=0;}
-                    float h=std::max(0.f,measure(child,false));rowh=std::max(rowh,h+2*cs.margin);
-                    layout(child,{area.x+pad+float(i%columns)*(cellw+s.gap)+cs.margin,rowy+cs.margin,std::max(0.f,cellw-2*cs.margin),h});
+            if (s.display==2) {
+                const auto columns=std::max(1u,s.grid_columns);
+                const float cellw=std::max(0.f,(innerw-s.gap*float(columns-1))/float(columns));
+                float cursor_y=area.y+pad;
+                const std::uint32_t rows=(n.child_count+columns-1)/columns;
+                for(std::uint32_t row=0;row<rows;++row){
+                    float row_height=0.f;
+                    for(std::uint32_t col=0;col<columns && row*columns+col<n.child_count;++col){
+                        const auto child=n.first_child+row*columns+col;
+                        const auto& cs=styles_[nodes_[child].style];
+                        row_height=std::max(row_height,measure(child,false)+2*cs.margin);
+                    }
+                    for(std::uint32_t col=0;col<columns && row*columns+col<n.child_count;++col){
+                        const auto child=n.first_child+row*columns+col;
+                        const auto& cs=styles_[nodes_[child].style];
+                        const float h=cs.height>=0?cs.height:std::max(0.f,row_height-2*cs.margin);
+                        layout(child,{area.x+pad+float(col)*(cellw+s.gap)+cs.margin,cursor_y+cs.margin,
+                            std::max(0.f,cellw-2*cs.margin),h});
+                    }
+                    cursor_y+=row_height+s.gap;
                 }
                 return;
             }
-            float basis=0,grow_total=0,shrink_weight=0;
-            for(std::uint32_t i=0;i<n.child_count;++i){auto child=n.first_child+i;const auto& cs=styles_[nodes_[child].style];const float b=measure(child,horizontal);basis+=b+cs.margin*2;grow_total+=std::max(0.f,cs.grow);shrink_weight+=b*std::max(0.f,cs.shrink);}
-            if(n.child_count>1)basis+=s.gap*float(n.child_count-1);
-            float free=available-basis,cursor=(horizontal?area.x:area.y)+pad;
-            for(std::uint32_t i=0;i<n.child_count;++i){auto child=n.first_child+i;const auto& cs=styles_[nodes_[child].style];float b=measure(child,horizontal);float main=b;
-                if(free>0 && grow_total>0)main+=free*std::max(0.f,cs.grow)/grow_total;
-                if(free<0 && shrink_weight>0)main=std::max(0.f,b+free*(b*std::max(0.f,cs.shrink))/shrink_weight);
-                float cross=std::max(0.f,(horizontal?innerh:innerw)-cs.margin*2);
-                Rect r=horizontal?Rect{cursor+cs.margin,area.y+pad+cs.margin,std::max(0.f,main),cross}:Rect{area.x+pad+cs.margin,cursor+cs.margin,cross,std::max(0.f,main)};
-                if(horizontal && cs.height>=0)r.height=cs.height;
-                if(!horizontal && cs.width>=0)r.width=cs.width;
-                layout(child,r);cursor+=main+cs.margin*2+s.gap;
+            const bool horizontal=(s.display==1 && s.direction==0);
+            const float available=horizontal?innerw:innerh;
+            // A flex line is computed as a contiguous interval, preserving source order.
+            std::uint32_t begin=0;
+            float cross_cursor=0.f;
+            while(begin<n.child_count){
+                std::uint32_t end=begin;
+                float basis=0.f,grow_total=0.f,shrink_weight=0.f,line_cross=0.f;
+                while(end<n.child_count){
+                    const auto child=n.first_child+end;
+                    const auto& cs=styles_[nodes_[child].style];
+                    if(cs.display==3){++end;continue;}
+                    const float b=measure(child,horizontal);
+                    const float outer=b+cs.margin*2;
+                    const float needed=outer+(end>begin?s.gap:0.f);
+                    if(s.wrap && end>begin && basis+needed>available)break;
+                    basis+=needed;grow_total+=std::max(0.f,cs.grow);
+                    shrink_weight+=b*std::max(0.f,cs.shrink);
+                    line_cross=std::max(line_cross,measure(child,!horizontal)+2*cs.margin);
+                    ++end;
+                }
+                if(end==begin)++end;
+                const float free=available-basis;
+                float offset=0.f,extra_gap=0.f;
+                if(free>0.f && grow_total==0.f){
+                    if(s.justify==1)offset=free/2;
+                    else if(s.justify==2)offset=free;
+                    else if(s.justify==3 && end-begin>1)extra_gap=free/float(end-begin-1);
+                }
+                float cursor=(horizontal?area.x:area.y)+pad+offset;
+                const float cross_space=s.wrap?line_cross:(horizontal?innerh:innerw);
+                for(std::uint32_t i=begin;i<end;++i){
+                    const auto child=n.first_child+i;
+                    const auto& cs=styles_[nodes_[child].style];
+                    if(cs.display==3){layout(child,{});continue;}
+                    const float b=measure(child,horizontal);
+                    float main=b;
+                    if(free>0 && grow_total>0)main+=free*std::max(0.f,cs.grow)/grow_total;
+                    if(free<0 && shrink_weight>0)main=std::max(0.f,b+free*b*std::max(0.f,cs.shrink)/shrink_weight);
+                    const float preferred_cross=measure(child,!horizontal);
+                    const float available_cross=std::max(0.f,cross_space-2*cs.margin);
+                    const float cross=s.align==0?available_cross:std::min(available_cross,preferred_cross);
+                    float cross_offset=0.f;
+                    if(s.align==2)cross_offset=(available_cross-cross)/2;
+                    if(s.align==3)cross_offset=available_cross-cross;
+                    const float cross_origin=(horizontal?area.y:area.x)+pad+cross_cursor+cs.margin+cross_offset;
+                    Rect r=horizontal?Rect{cursor+cs.margin,cross_origin,main,cross}:
+                        Rect{cross_origin,cursor+cs.margin,cross,main};
+                    layout(child,r);
+                    cursor+=main+2*cs.margin+s.gap+extra_gap;
+                }
+                cross_cursor+=line_cross+s.gap;
+                begin=end;
             }
         }
         void render() {
             commands_.clear();
             for(std::size_t i=0;i<nodes_.size();++i){auto& n=nodes_[i];auto& s=styles_[n.style];if(s.display==3)continue;
+                bool hidden=false;auto ancestor=n.parent;while(ancestor!=0xffffffff){if(styles_[nodes_[ancestor].style].display==3){hidden=true;break;}ancestor=nodes_[ancestor].parent;}if(hidden)continue;
                 commands_.push_back({rectangles_[i],s.background,text(n.text_offset,n.text_size),s.foreground,s.font_size});
             }
         }
@@ -123,7 +173,7 @@ export namespace arcade::ui {
             const std::array<char,8> magic={'A','R','C','U','X','I','\0','\x01'};
             if(std::memcmp(b,magic.data(),8)!=0)throw std::runtime_error("Invalid magic");
             auto version=u32(b+8), count=u32(b+12), nbytes=u32(b+16),sbytes=u32(b+20),strbytes=u32(b+24),abytes=u32(b+28);
-            if(version!=1||count>1000000||nbytes!=count*sizeof(Node)||sbytes!=count*sizeof(Style))throw std::runtime_error("Invalid header");
+            if(version!=2||count>1000000||nbytes!=count*sizeof(Node)||sbytes!=count*sizeof(Style))throw std::runtime_error("Invalid header");
             std::uint64_t total=72ull+nbytes+sbytes+strbytes+abytes;
             if(total!=result.bytes_.size())throw std::runtime_error("Invalid sections");
             result.strings_start_=72+nbytes+sbytes;result.strings_size_=strbytes;
@@ -132,9 +182,9 @@ export namespace arcade::ui {
                 if(n.style>=count||(n.parent!=0xffffffff && n.parent>=i)||(n.child_count && (n.first_child<=i || std::uint64_t(n.first_child)+n.child_count>count)))throw std::runtime_error("Invalid topology");
                 result.nodes_.push_back(n);(void)result.text(n.text_offset,n.text_size);(void)result.text(n.event_offset,n.event_size);
             }
-            for(std::uint32_t i=0;i<count;++i){auto x=b+72+nbytes+std::size_t(i)*52;Style s{};
-                s.display=u32(x);s.direction=u32(x+4);s.width=f32(x+8);s.height=f32(x+12);s.grow=f32(x+16);s.shrink=f32(x+20);s.gap=f32(x+24);s.padding=f32(x+28);s.margin=f32(x+32);s.font_size=f32(x+36);s.background=u32(x+40);s.foreground=u32(x+44);s.flags=u32(x+48);
-                if(s.display>3||s.direction>1)throw std::runtime_error("Invalid style");result.styles_.push_back(s);
+            for(std::uint32_t i=0;i<count;++i){auto x=b+72+nbytes+std::size_t(i)*68;Style s{};
+                s.display=u32(x);s.direction=u32(x+4);s.width=f32(x+8);s.height=f32(x+12);s.grow=f32(x+16);s.shrink=f32(x+20);s.gap=f32(x+24);s.padding=f32(x+28);s.margin=f32(x+32);s.font_size=f32(x+36);s.background=u32(x+40);s.foreground=u32(x+44);s.flags=u32(x+48);s.justify=u32(x+52);s.align=u32(x+56);s.wrap=u32(x+60);s.grid_columns=u32(x+64);
+                if(s.display>3||s.direction>1||s.justify>3||s.align>3||s.wrap>1||s.grid_columns>4096)throw std::runtime_error("Invalid style");result.styles_.push_back(s);
             }
             result.rectangles_.resize(count);return result;
         }
