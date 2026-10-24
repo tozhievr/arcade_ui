@@ -17,6 +17,10 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -44,7 +48,7 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | \
             sudo tee /etc/apt/sources.list.d/llvm21.list
           sudo apt-get update
-          sudo apt-get install -y clang-21 lld-21
+          sudo apt-get install -y clang-21 clang-tidy-21 lld-21
           clang++-21 --version
 
       - name: Install Python and CMake toolchain
@@ -75,6 +79,21 @@ jobs:
 
       - name: Run CTest including renderer contract and font cache
         run: ctest --test-dir build/native --output-on-failure --parallel 2
+
+      - name: clang-tidy audit (report-only until baseline is clean)
+        if: success()
+        run: |
+          python3 tools/clang-tidy-audit.py --build build/native --timeout 15 \
+            --binary clang-tidy-21 \
+            --output build/native/clang-tidy-report.json
+
+      - name: Upload clang-tidy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-audit
+          path: build/native/clang-tidy-report.json
+          if-no-files-found: ignore
 
       - name: Upload test logs on failure
         if: failure()
