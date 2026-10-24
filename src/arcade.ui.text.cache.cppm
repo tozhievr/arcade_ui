@@ -144,7 +144,7 @@ namespace arcade::ui::text {
                 ++stats_.shape_failures;
                 return std::nullopt;
             }
-            if (!text.empty() && (static_cast<unsigned char>(text[g.cluster]) & 0xC0u) == 0x80u) {
+            if (!text.empty() && (static_cast<unsigned char>(text[g.cluster]) & 0xC0U) == 0x80U) {
                 ++stats_.shape_failures;
                 return std::nullopt;
             }
