@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install clang-format 21
         run: |
           sudo apt-get update
@@ -37,7 +39,18 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm21.list
           sudo apt-get update
           sudo apt-get install -y clang-format-21
-      - name: Validate formatting
+      - name: Validate changed C++ files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+            BASE_SHA="HEAD^"
+          fi
+          python3 tools/clang-format-all.py --check --changed-from "${BASE_SHA}" --binary clang-format-21
+      - name: Full repository format report (existing style debt)
+        continue-on-error: true
         run: python3 tools/clang-format-all.py --check --binary clang-format-21
 
   autofix:

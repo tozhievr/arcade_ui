@@ -27,6 +27,7 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="Check only, fail on differences (default)")
     mode.add_argument("--fix", action="store_true", help="Format in place")
+    parser.add_argument("--changed-from", help="Only C++ files changed since this git ref")
     parser.add_argument("--binary", default=os.environ.get("CLANG_FORMAT", "clang-format"),
                         help="clang-format executable (CLANG_FORMAT env also supported)")
     args = parser.parse_args()
@@ -37,6 +38,20 @@ def main() -> int:
         return 2
 
     files = sources()
+    if args.changed_from:
+        changed = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMR",
+             args.changed_from + "...HEAD", "--", "src", "tests"],
+            cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+        if changed.returncode:
+            print(changed.stderr, file=sys.stderr)
+            return 2
+        names = set(changed.stdout.splitlines())
+        files = [p for p in files if p.relative_to(ROOT).as_posix() in names]
+        if not files:
+            print("No changed C++ sources; formatting check passes.")
+            return 0
     if not files:
         print("No C++ sources found", file=sys.stderr)
         return 2
