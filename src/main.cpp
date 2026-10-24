@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <exception>
 #include <fstream>
+#include <string_view>
 import arcade.ui;
 int main(int argc, char **argv) {
   if (argc < 2) {
@@ -19,7 +20,14 @@ int main(int argc, char **argv) {
         std::printf("text (%g,%g): %.*s\n", c.rect.x, c.rect.y,
                     int(c.text.size()), c.text.data());
     }
-    if (argc > 2) {
+    if (argc > 2 && std::string_view(argv[2]) == "--geometry") {
+      auto rectangles = doc.geometry();
+      for (std::size_t i = 0; i < rectangles.size(); ++i) {
+        const auto &r = rectangles[i];
+        std::printf("geometry %zu %.3f %.3f %.3f %.3f\n", i, r.x, r.y, r.width,
+                    r.height);
+      }
+    } else if (argc > 2) {
       std::ofstream svg(argv[2]);
       if (!svg)
         return 3;

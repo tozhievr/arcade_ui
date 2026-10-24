@@ -16,11 +16,11 @@ import sys
 MAGIC = b'ARCUXI\x00\x01'
 HEADER = struct.Struct('<8sIIIIIIII32s')
 NODE = struct.Struct('<IIIIIIII')
-STYLE = struct.Struct('<II8fIII')
+STYLE = struct.Struct('<II8fIII4I')
 # node: parent,first_child,child_count,style,text_offset,text_len,event_offset,event_len
 # style: display, direction, width,height,grow,shrink,gap,padding,margin,font_size,background,text_color,flags
 COLORS={'black':0xff000000,'white':0xffffffff,'transparent':0x00000000,'red':0xffff0000,'blue':0xff0000ff,'green':0xff008000,'gray':0xff808080,'grey':0xff808080,'purple':0xff800080,'navy':0xff000080}
-PROPS=['display','flex-direction','width','height','flex-grow','flex-shrink','gap','padding','margin','font-size','background','color']
+PROPS=['display','flex-direction','width','height','flex-grow','flex-shrink','gap','padding','margin','font-size','background','color','justify-content','align-items','flex-wrap','grid-template-columns']
 
 def color(s):
     s=s.strip().lower()
@@ -294,8 +294,33 @@ def compile_ui(source,asset_root,diagnostic_source=None):
         bg=color_value('background',0);fg=color_value('color',0xffffffff)
         values=[number('width',-1),number('height',-1),number('flex-grow',0),number('flex-shrink',1),
                 number('gap',0),number('padding',0),number('margin',0),number('font-size',16)]
-        # 32-bit flags contain text/bg colors? colors are stored in the 2 final uints.
-        styles.append(STYLE.pack(display,direction,*values,bg,fg,0))
+        def choice(key, allowed, default):
+            value=decl.get(key,default)
+            if value not in allowed:
+                diag.fail('AUX-CSS-109',f'Unsupported {key}: {value}',locations.get(key,n['span']),
+                          'Supported values: '+', '.join(allowed))
+                return allowed[default]
+            return allowed[value]
+        justify=choice('justify-content',{'flex-start':0,'start':0,'center':1,'flex-end':2,'end':2,'space-between':3},'flex-start')
+        align=choice('align-items',{'stretch':0,'flex-start':1,'start':1,'center':2,'flex-end':3,'end':3},'stretch')
+        wrap=choice('flex-wrap',{'nowrap':0,'wrap':1},'nowrap')
+        gridcols=0
+        if 'grid-template-columns' in decl:
+            raw=decl['grid-template-columns'].strip()
+            match=re.fullmatch(r'repeat\(\s*([1-9]\d*)\s*,\s*1fr\s*\)',raw)
+            tokens=raw.split()
+            if match:gridcols=int(match.group(1))
+            elif tokens and all(t=='1fr' for t in tokens):gridcols=len(tokens)
+            if not 1<=gridcols<=4096:
+                diag.fail('AUX-CSS-110','Unsupported grid-template-columns: '+raw,
+                          locations.get('grid-template-columns',n['span']),
+                          'Current layout profile supports: 1fr 1fr ... or repeat(N, 1fr), N <= 4096.')
+                gridcols=0
+        if 'grid-template-columns' in decl and display!=2:
+            diag.fail('AUX-CSS-111','grid-template-columns requires display: grid',locations['grid-template-columns'])
+        if wrap and display!=1:
+            diag.fail('AUX-CSS-112','flex-wrap requires display: flex',locations['flex-wrap'])
+        styles.append(STYLE.pack(display,direction,*values,bg,fg,0,justify,align,wrap,gridcols))
         to,tl=intern(n['text']);ev=a.get('data-action','');eo,el=intern(ev)
         kids=n['children'];first=mapping[kids[0]] if kids else 0xffffffff
         entries.append(NODE.pack(mapping[n['parent']] if n['parent']!=0xffffffff else 0xffffffff,first,len(kids),len(styles)-1,to,tl,eo,el))
@@ -316,7 +341,7 @@ def compile_ui(source,asset_root,diagnostic_source=None):
         name=src.encode('utf8');assets.extend(struct.pack('<II',len(name),len(data)));assets.extend(name);assets.extend(data)
     payload=nodes_blob+styles_blob+strings+assets
     digest=hashlib.sha256(payload).digest()
-    header=HEADER.pack(MAGIC,1,len(entries),len(nodes_blob),len(styles_blob),len(strings),len(assets),0,0,digest)
+    header=HEADER.pack(MAGIC,2,len(entries),len(nodes_blob),len(styles_blob),len(strings),len(assets),0,0,digest)
     return header+payload
 
 def main():

@@ -14,7 +14,7 @@ class CompilerTests(unittest.TestCase):
         data=arcuxc.compile_ui('<div style="display:flex;width:200px"><span>abc</span><span>xyz</span></div>',SRC)
         magic,version,count,nbytes,sbytes,strbytes,abytes,_,_,sha=arcuxc.HEADER.unpack_from(data)
         self.assertEqual(magic,arcuxc.MAGIC)
-        self.assertEqual((version,count,nbytes,sbytes), (1,3,96,156))
+        self.assertEqual((version,count,nbytes,sbytes), (2,3,96,204))
         self.assertEqual(len(data),arcuxc.HEADER.size+nbytes+sbytes+strbytes+abytes)
         self.assertEqual(arcuxc.NODE.unpack_from(data,arcuxc.HEADER.size+32)[0],0)
     def test_determinism(self):
@@ -43,12 +43,12 @@ class StandardsProfileTests(unittest.TestCase):
         source='<style>div span { color: red } div > span { color: blue }</style><div><span>hello</span></div>'
         data=arcuxc.compile_ui(source,SRC)
         offset=arcuxc.HEADER.size+2*arcuxc.NODE.size+arcuxc.STYLE.size
-        self.assertEqual(arcuxc.STYLE.unpack_from(data,offset)[-2],arcuxc.color('blue'))
+        self.assertEqual(arcuxc.STYLE.unpack_from(data,offset)[11],arcuxc.color('blue'))
     def test_important_over_inline(self):
         source='<style>#x { color: red !important }</style><div id="x" style="color:blue">x</div>'
         data=arcuxc.compile_ui(source,SRC)
         style=arcuxc.STYLE.unpack_from(data,arcuxc.HEADER.size+arcuxc.NODE.size)
-        self.assertEqual(style[-2],arcuxc.color('red'))
+        self.assertEqual(style[11],arcuxc.color('red'))
     def test_no_silent_unsupported_css(self):
         for source in ('<style>@media screen { div {color:red} }</style><div></div>',
                        '<style>div { display:flex; grid-template-columns:1fr 1fr }</style><div></div>'):
