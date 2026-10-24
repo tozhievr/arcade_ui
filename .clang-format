@@ -1,0 +1,112 @@
+---
+# .clang-format for modern C++29 module-based projects
+# Based on LLVM style with modern tweaks for readability and C++20/23 features.
+# Use with clang-format 23+ for best C++29 support (modules, concepts, etc.)
+
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Indentation and whitespace
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentPPDirectives: AfterHash
+IndentCaseLabels: true
+IndentCaseBlocks: false
+IndentGotoLabels: false
+IndentWrappedFunctionNames: false
+IndentRequiresClause: true  # Good for C++20 concepts
+
+# Braces and blocks (modern attach style with some control)
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterFunctionDeclarationName: false
+  AfterFunctionDefinitionName: false
+  AfterIfMacros: true
+  AfterOverloadedOperator: false
+  AfterRequiresInClause: true
+  AfterRequiresInExpression: true
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyParentheses: false
+SpacesInContainerLiterals: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeSquareBrackets: false
+
+# Line breaking and wrapping
+ColumnLimit: 100  # Reasonable for modern wide screens; adjust to 80/120 if preferred
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: false
+BinPackParameters: false
+ExperimentalAutoDetectBinPacking: false
+
+# Includes and modules (important for module projects)
+IncludeCategories:
+  - Regex: '^<.*\.h(pp)?>'
+    Priority: 1
+  - Regex: '^<.*>'
+    Priority: 2
+  - Regex: '^".*'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 4
+IncludeIsMainRegex: '([-_](test|unittest))?$'
+SortIncludes: CaseSensitive
+
+# C++20/23 specific and modern features
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: false
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Comments and documentation
+ReflowComments: true
+CommentPragmas: '^ IWYU pragma:'
+CompactNamespaces: false
+FixNamespaceComments: true
+
+# Pointers and references (modern: right-align or left? LLVM left, but many prefer right for clarity)
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# Other
+AccessModifierOffset: -4
+NamespaceIndentation: All
+ObjCBinPackProtocolList: Never
+ObjCBlockIndentWidth: 4
+ObjCSpaceAfterProperty: true
+ObjCSpaceBeforeProtocolList: true
+
+# For modules: clang-format handles 'module', 'import', 'export' keywords naturally.
+# No special rules needed; they are treated like other keywords.
+# Example formatting:
+# export module MyModule;
+# import std;
+# import MyOtherModule;
+
+# To use: clang-format -i --style=file src/**/*.cppm src/**/*.cpp

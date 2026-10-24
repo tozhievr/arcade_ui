@@ -1,0 +1,77 @@
+# Arcade Engine | LLVM/clang-tidy 23.x | C++29 Modules | production profile
+# Check policy: aggressive bug detection, restrained style enforcement.
+---
+Checks: >-
+  -*,
+  bugprone-*,
+  clang-analyzer-core.*,
+  clang-analyzer-cplusplus.*,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-security.*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  misc-*,
+  readability-*,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -modernize-make-shared,
+  -modernize-make-unique,
+  -modernize-use-trailing-return-type,
+  -modernize-use-std-print,
+  -modernize-min-max-use-initializer-list,
+  -misc-include-cleaner,
+  -misc-definitions-in-headers,
+  -misc-anonymous-namespace-in-header,
+  -readability-identifier-naming,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-avoid-const-params-in-decls,
+  -readability-braces-around-statements,
+  -readability-else-after-return
+WarningsAsErrors: >-
+  clang-analyzer-core.*,
+  bugprone-use-after-move,
+  bugprone-dangling-handle,
+  bugprone-undefined-memory-manipulation
+HeaderFilterRegex: '.*[/\\](modules|apps|game|tools|tests|benchmarks)[/\\].*'
+ExcludeHeaderFilterRegex: '.*[/\\](external|third_party|_deps|build|out)[/\\].*'
+SystemHeaders: false
+FormatStyle: file
+CheckOptions:
+  - key: modernize-use-auto.MinTypeNameLength
+    value: '8'
+  - key: modernize-use-auto.RemoveStars
+    value: 'false'
+  - key: modernize-use-designated-initializers.IgnoreSingleElementAggregates
+    value: 'true'
+  - key: performance-for-range-copy.WarnOnAllAutoCopies
+    value: 'true'
+  - key: bugprone-narrowing-conversions.WarnOnIntegerNarrowingConversion
+    value: 'true'
+  - key: bugprone-narrowing-conversions.WarnOnIntegerToFloatingPointNarrowingConversion
+    value: 'true'
+# These query-based checks are dormant in production unless the driver receives
+# --experimental-custom-checks and enables 'custom-*'.
+CustomChecks:
+  - Name: no-explicit-delete
+    Query: |
+      match cxxDeleteExpr().bind("manual_delete")
+    Diagnostic:
+      - BindName: manual_delete
+        Message: 'Arcade prefers RAII; review manual delete and ownership boundaries'
+        Level: Warning
+  - Name: review-explicit-new
+    Query: |
+      match cxxNewExpr().bind("manual_new")
+    Diagnostic:
+      - BindName: manual_new
+        Message: 'Review explicit new; prefer a scoped owner or a dedicated allocator'
+        Level: Warning
+...

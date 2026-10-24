@@ -22,24 +22,23 @@ export namespace arcade::ui {
     };
 
     struct AppError {
-        AppErrorCode code{};
+        AppErrorCode code {};
         std::string message;
     };
 
     // Owns Document and renderer. A frame is a synchronous transaction over
     // a snapshot of draw commands. Async scheduling belongs to a later layer.
-    template<RenderDriver D>
-    class Application {
+    template <RenderDriver D> class Application {
         Document document_;
         D driver_;
-        float width_{};
-        float height_{};
-        std::uint64_t completed_frames_{};
+        float width_ {};
+        float height_ {};
+        std::uint64_t completed_frames_ {};
 
     public:
         Application(Document document, D driver, float width, float height)
-            : document_(std::move(document)),
-              driver_(std::move(driver)), width_(width), height_(height) {}
+            : document_(std::move(document)), driver_(std::move(driver)), width_(width),
+              height_(height) {}
 
         Application(const Application&) = delete;
         Application& operator=(const Application&) = delete;
@@ -58,13 +57,14 @@ export namespace arcade::ui {
             const bool submitted = driver_.submit(document_.commands());
             // Always close a started frame, even if submit failed.
             const bool ended = driver_.end_frame();
-            if (submitted && ended) ++completed_frames_;
+            if (submitted && ended)
+                ++completed_frames_;
             return submitted && ended;
         }
 
         [[nodiscard]] bool resize(float width, float height) noexcept {
-            if (!std::isfinite(width) || !std::isfinite(height) ||
-                width < 0 || height < 0) return false;
+            if (!std::isfinite(width) || !std::isfinite(height) || width < 0 || height < 0)
+                return false;
             width_ = width;
             height_ = height;
             return true;
@@ -74,13 +74,10 @@ export namespace arcade::ui {
         [[nodiscard]] const Document& document() const noexcept { return document_; }
         [[nodiscard]] D& render_driver() noexcept { return driver_; }
         [[nodiscard]] const D& render_driver() const noexcept { return driver_; }
-        [[nodiscard]] std::uint64_t completed_frames() const noexcept {
-            return completed_frames_;
-        }
+        [[nodiscard]] std::uint64_t completed_frames() const noexcept { return completed_frames_; }
     };
 
-    template<RenderDriver D>
-    class AppBuilder {
+    template <RenderDriver D> class AppBuilder {
         std::string source_;
         std::optional<D> renderer_;
         std::pmr::memory_resource* resource_ = std::pmr::get_default_resource();
@@ -117,26 +114,25 @@ export namespace arcade::ui {
 
         [[nodiscard]] std::expected<Application<D>, AppError> build() && {
             if (source_.empty()) {
-                return std::unexpected(AppError{AppErrorCode::missing_source,
-                                               "An ArcUXI source path is required"});
+                return std::unexpected(
+                    AppError {AppErrorCode::missing_source, "An ArcUXI source path is required"});
             }
             if (!renderer_) {
-                return std::unexpected(AppError{AppErrorCode::missing_driver,
-                                               "A render driver is required"});
+                return std::unexpected(
+                    AppError {AppErrorCode::missing_driver, "A render driver is required"});
             }
-            if (!std::isfinite(width_) || !std::isfinite(height_) ||
-                width_ < 0 || height_ < 0) {
-                return std::unexpected(AppError{AppErrorCode::invalid_viewport,
-                                               "Viewport must have finite nonnegative dimensions"});
+            if (!std::isfinite(width_) || !std::isfinite(height_) || width_ < 0 || height_ < 0) {
+                return std::unexpected(
+                    AppError {AppErrorCode::invalid_viewport,
+                              "Viewport must have finite nonnegative dimensions"});
             }
             try {
                 Document document = Document::load(source_, resource_);
                 return std::expected<Application<D>, AppError>(
-                    std::in_place, std::move(document),
-                    std::move(*renderer_), width_, height_);
+                    std::in_place, std::move(document), std::move(*renderer_), width_, height_);
             } catch (const std::exception& e) {
-                return std::unexpected(AppError{AppErrorCode::load_failure,e.what()});
+                return std::unexpected(AppError {AppErrorCode::load_failure, e.what()});
             }
         }
     };
-}
+} // namespace arcade::ui

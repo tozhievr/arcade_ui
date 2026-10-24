@@ -1,24 +1,23 @@
 module;
 #include <cstdint>
-#include <vector>
 #include <memory_resource>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 export module arcade.ui.mock;
 export import arcade.ui.contracts;
 import arcade.ui;
 
 export namespace arcade::ui {
     struct RecordedDrawCommand {
-        Rect rect{};
-        std::uint32_t rgba{};
+        Rect rect {};
+        std::uint32_t rgba {};
         std::pmr::string text;
-        std::uint32_t text_rgba{};
-        float font_size{};
-        explicit RecordedDrawCommand(std::pmr::memory_resource* resource)
-            : text(resource) {}
+        std::uint32_t text_rgba {};
+        float font_size {};
+        explicit RecordedDrawCommand(std::pmr::memory_resource* resource) : text(resource) {}
     };
 
     // Test-only backend, performs no rendering. Text strings are deep-copied
@@ -26,10 +25,10 @@ export namespace arcade::ui {
     class MockRenderDriver {
         std::pmr::memory_resource* resource_;
         std::pmr::vector<RecordedDrawCommand> commands_;
-        FrameInfo last_frame_{};
-        std::uint64_t starts_{}, submits_{}, finishes_{};
-        bool active_{};
-        bool fail_begin_{}, fail_submit_{}, fail_end_{};
+        FrameInfo last_frame_ {};
+        std::uint64_t starts_ {}, submits_ {}, finishes_ {};
+        bool active_ {};
+        bool fail_begin_ {}, fail_submit_ {}, fail_end_ {};
 
     public:
         explicit MockRenderDriver(
@@ -43,7 +42,8 @@ export namespace arcade::ui {
         MockRenderDriver& operator=(MockRenderDriver&&) = default;
 
         [[nodiscard]] bool begin_frame(FrameInfo frame) noexcept {
-            if (active_ || fail_begin_) return false;
+            if (active_ || fail_begin_)
+                return false;
             commands_.clear();
             last_frame_ = frame;
             active_ = true;
@@ -51,7 +51,8 @@ export namespace arcade::ui {
             return true;
         }
         [[nodiscard]] bool submit(std::span<const DrawCommand> batch) noexcept {
-            if (!active_ || fail_submit_) return false;
+            if (!active_ || fail_submit_)
+                return false;
             try {
                 for (const auto& source : batch) {
                     RecordedDrawCommand& target = commands_.emplace_back(resource_);
@@ -69,13 +70,16 @@ export namespace arcade::ui {
             }
         }
         [[nodiscard]] bool end_frame() noexcept {
-            if (!active_) return false;
+            if (!active_)
+                return false;
             active_ = false;
             ++finishes_;
             return !fail_end_;
         }
         void inject_failures(bool begin, bool submit, bool end) noexcept {
-            fail_begin_ = begin; fail_submit_ = submit; fail_end_ = end;
+            fail_begin_ = begin;
+            fail_submit_ = submit;
+            fail_end_ = end;
         }
         [[nodiscard]] std::span<const RecordedDrawCommand> commands() const noexcept {
             return commands_;
@@ -86,4 +90,4 @@ export namespace arcade::ui {
         [[nodiscard]] std::uint64_t ended_frames() const noexcept { return finishes_; }
     };
     static_assert(RenderDriver<MockRenderDriver>);
-}
+} // namespace arcade::ui
