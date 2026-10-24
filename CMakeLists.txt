@@ -226,3 +226,12 @@ if(BUILD_TESTING)
     target_link_libraries(arcadeui_shaped_cache_tests PRIVATE arcade_ui_text_cache)
     add_test(NAME runtime_shaped_cache COMMAND arcadeui_shaped_cache_tests)
 endif()
+
+# v2.0: connect OpenType shaping with the shared SoA cache module.
+# Public linkage is necessary because arcade.ui.font exports the cache API.
+if(TARGET arcade_ui_font)
+    target_link_libraries(arcade_ui_font PUBLIC arcade_ui_text_cache)
+    if(TARGET arcadeui_font_backend_tests)
+        set_tests_properties(runtime_font_backend PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
+endif()

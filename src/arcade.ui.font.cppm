@@ -2,6 +2,9 @@ module;
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <memory_resource>
+#include <optional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -13,6 +16,7 @@ module;
 #include <hb-ft.h>
 export module arcade.ui.font;
 export import arcade.ui;
+export import arcade.ui.text.cache;
 #ifdef ARCADE_UI_HAS_UNICODE
 import arcade.ui.unicode;
 #endif
@@ -37,6 +41,11 @@ export namespace arcade::ui::font {
         void detach(Document& document) noexcept;
         [[nodiscard]] TextIntrinsic intrinsic(std::string_view text,float px);
         [[nodiscard]] TextLineLayout lines(std::string_view text,float px,float available_width);
+        // Returned view is invalidated by any operation modifying this face's cache.
+        // The OpenType instance and its font face must outlive the view.
+        [[nodiscard]] std::optional<text::GlyphRunView> shape(std::string_view text,float px);
+        [[nodiscard]] text::CacheStats cache_stats() const noexcept;
+        void clear_cache() noexcept;
     };
 }
 
@@ -45,6 +54,8 @@ namespace arcade::ui::font {
         FT_Library library{};
         FT_Face face{};
         hb_font_t* font{};
+        text::ShapedRunCache cache{1024,131072};
+        std::uint32_t pixel_size_64{};
         explicit State(std::string_view file) {
             if(FT_Init_FreeType(&library))throw std::runtime_error("FreeType initialization failed");
             const std::string path(file);
@@ -58,20 +69,55 @@ namespace arcade::ui::font {
             if(FT_Set_Pixel_Sizes(face,0,static_cast<FT_UInt>(std::max(1.f,std::round(px)))))
                 throw std::runtime_error("Cannot set font pixel size");
             hb_ft_font_changed(font);
+            pixel_size_64 = static_cast<std::uint32_t>(std::round(px))*64u;
+        }
+        static bool shape_callback(void* context, std::string_view input, text::ShapeKey,
+                                   std::pmr::vector<text::GlyphMetrics>& glyphs) noexcept {
+            try {
+                if(input.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                    return false;
+                std::unique_ptr<hb_buffer_t,decltype(&hb_buffer_destroy)>
+                    buffer(hb_buffer_create(),&hb_buffer_destroy);
+                if(!buffer) return false;
+                hb_buffer_add_utf8(buffer.get(),input.data(),static_cast<int>(input.size()),
+                                   0,static_cast<int>(input.size()));
+                hb_buffer_guess_segment_properties(buffer.get());
+                hb_shape(static_cast<State*>(context)->font,buffer.get(),nullptr,0);
+                unsigned count=0;
+                const auto* info=hb_buffer_get_glyph_infos(buffer.get(),&count);
+                unsigned position_count=0;
+                const auto* pos=hb_buffer_get_glyph_positions(buffer.get(),&position_count);
+                if(count!=position_count || (count && (!info || !pos))) return false;
+                glyphs.reserve(count);
+                for(unsigned i=0;i<count;++i) {
+                    glyphs.push_back({
+                        info[i].codepoint,
+                        info[i].cluster,
+                        static_cast<float>(pos[i].x_advance)/64.f,
+                        static_cast<float>(pos[i].y_advance)/64.f,
+                        static_cast<float>(pos[i].x_offset)/64.f,
+                        static_cast<float>(pos[i].y_offset)/64.f
+                    });
+                }
+                return true;
+            } catch(...) {
+                glyphs.clear();
+                return false;
+            }
+        }
+        [[nodiscard]] std::optional<text::GlyphRunView> shaped(std::string_view input) {
+            const text::ShapeKey key{
+                .face_id=1, // Cache is owned by one immutable FT_Face.
+                .face_generation=1,
+                .pixel_size_64=pixel_size_64
+            };
+            return cache.get_or_shape(input,key,&shape_callback,this);
         }
         float advance(std::string_view t) {
-            if(t.empty())return 0;
-            hb_buffer_t* b=hb_buffer_create();
-            if(!b)throw std::bad_alloc();
-            hb_buffer_add_utf8(b,t.data(),static_cast<int>(t.size()),0,static_cast<int>(t.size()));
-            hb_buffer_guess_segment_properties(b);
-            hb_shape(font,b,nullptr,0);
-            unsigned count=0;
-            const auto* pos=hb_buffer_get_glyph_positions(b,&count);
-            std::int64_t sum=0;
-            for(unsigned i=0;i<count;++i)sum+=pos[i].x_advance;
-            hb_buffer_destroy(b);
-            return std::max(0.f,static_cast<float>(sum)/64.f);
+            if(t.empty()) return 0;
+            const auto result=shaped(t);
+            if(!result) throw std::runtime_error("OpenType shaping failed");
+            return std::max(0.f,result->total_advance);
         }
         float line_height() const {
             return std::max(1.f,static_cast<float>(face->size->metrics.height)/64.f);
@@ -81,6 +127,16 @@ namespace arcade::ui::font {
     OpenType::~OpenType()=default;
     OpenType::OpenType(OpenType&&) noexcept=default;
     OpenType& OpenType::operator=(OpenType&&) noexcept=default;
+    std::optional<text::GlyphRunView> OpenType::shape(std::string_view value,float px) {
+        state_->size(px);
+        return state_->shaped(value);
+    }
+    text::CacheStats OpenType::cache_stats() const noexcept {
+        return state_->cache.stats();
+    }
+    void OpenType::clear_cache() noexcept {
+        state_->cache.clear();
+    }
     TextIntrinsic OpenType::intrinsic(std::string_view t,float px){
         state_->size(px);
         float widest=0,word=0;
