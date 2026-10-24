@@ -32,6 +32,8 @@ export namespace arcade::ui::unicode {
         Direction direction = Direction::ltr);
     [[nodiscard]] TextAnalysis analyze(std::string_view utf8,
         Direction paragraph_direction = Direction::ltr);
+    // UAX #29 extended grapheme-cluster boundaries in original UTF-8 byte offsets.
+    [[nodiscard]] std::vector<std::uint32_t> grapheme_boundaries(std::string_view utf8);
 }
 
 namespace arcade::ui::unicode {
@@ -149,5 +151,41 @@ namespace arcade::ui::unicode {
         }catch(...){ubidi_close(para);throw;}
         ubidi_close(para);
         return output;
+    }
+}
+
+namespace arcade::ui::unicode {
+    std::vector<std::uint32_t> grapheme_boundaries(std::string_view input) {
+        if(input.size()>static_cast<std::size_t>(std::numeric_limits<int32_t>::max()))
+            throw std::length_error("Unicode input exceeds ICU maximum length");
+        UErrorCode error=U_ZERO_ERROR;
+        int32_t length=0;
+        u_strFromUTF8(nullptr,0,&length,input.data(),static_cast<int32_t>(input.size()),&error);
+        if(error!=U_BUFFER_OVERFLOW_ERROR && U_FAILURE(error))
+            throw std::invalid_argument("Invalid UTF-8 input");
+        error=U_ZERO_ERROR;
+        std::vector<UChar> units(static_cast<std::size_t>(length)+1);
+        u_strFromUTF8(units.data(),static_cast<int32_t>(units.size()),&length,
+            input.data(),static_cast<int32_t>(input.size()),&error);
+        if(U_FAILURE(error))throw std::invalid_argument("Invalid UTF-8 input");
+        std::vector<std::uint32_t> to_byte(static_cast<std::size_t>(length)+1);
+        std::size_t byte=0;
+        int32_t offset=0;
+        while(byte<input.size()) {
+            const unsigned char lead=static_cast<unsigned char>(input[byte]);
+            const int size=lead<0x80?1:lead<0xE0?2:lead<0xF0?3:4;
+            to_byte[offset++]=static_cast<std::uint32_t>(byte);
+            if(size==4)to_byte[offset++]=static_cast<std::uint32_t>(byte);
+            byte+=static_cast<std::size_t>(size);
+        }
+        to_byte[length]=static_cast<std::uint32_t>(input.size());
+        error=U_ZERO_ERROR;
+        UBreakIterator* iterator=ubrk_open(UBRK_CHARACTER,"und",units.data(),length,&error);
+        if(U_FAILURE(error)||!iterator)throw std::runtime_error("ICU grapheme breaker initialization failed");
+        std::vector<std::uint32_t> boundaries;
+        for(int32_t pos=ubrk_first(iterator);pos!=UBRK_DONE;pos=ubrk_next(iterator))
+            boundaries.push_back(to_byte[pos]);
+        ubrk_close(iterator);
+        return boundaries;
     }
 }
