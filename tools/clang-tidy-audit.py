@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--build", default="build/native")
     parser.add_argument("--binary", default=os.environ.get("CLANG_TIDY", "clang-tidy"))
     parser.add_argument("--output", default="build/native/clang-tidy-report.json")
+    parser.add_argument("--timeout", type=int, default=60, help="Timeout seconds per translation unit")
     parser.add_argument("--strict", action="store_true", help="Fail if clang-tidy finds diagnostics")
     parser.add_argument("--limit", type=int, default=0, help="Limit translation units for debugging")
     args = parser.parse_args()
@@ -53,18 +54,25 @@ def main() -> int:
     for path in files:
         rel = path.relative_to(ROOT).as_posix()
         cmd = [exe, "-p", str(build), "--quiet", str(path)]
-        completed = subprocess.run(cmd, cwd=ROOT, capture_output=True,
-                                   text=True, check=False)
-        combined = (completed.stdout or "") + (completed.stderr or "")
+        try:
+            completed = subprocess.run(cmd, cwd=ROOT, capture_output=True,
+                                       text=True, check=False, timeout=args.timeout)
+            combined = (completed.stdout or "") + (completed.stderr or "")
+            status = completed.returncode
+        except subprocess.TimeoutExpired as e:
+            stdout = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            stderr = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            combined = stdout + stderr + "\\nclang-tidy timeout after " + str(args.timeout) + " seconds"
+            status = 124
         for match in PATTERN.finditer(combined):
             records.append({"file": match.group(1), "line": int(match.group(2)),
                             "column": int(match.group(3)), "level": match.group(4),
                             "message": match.group(5), "check": match.group(6) or ""})
-        if completed.returncode:
-            failures.append({"file": rel, "returncode": completed.returncode,
+        if status:
+            failures.append({"file": rel, "returncode": status,
                              "output": combined[-12000:]})
         print(f"{rel}: {sum(1 for item in records if item['file'].endswith(rel))} diagnostics"
-              + (" (tool returned nonzero)" if completed.returncode else ""), flush=True)
+              + (" (tool returned nonzero)" if status else ""), flush=True)
 
     report = {"tool": args.binary, "units": len(files), "diagnostics": len(records),
               "findings": records, "nonzero_exits": failures}
