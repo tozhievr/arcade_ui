@@ -1,0 +1,86 @@
+name: One-time C++ clang-tidy autofix
+
+on:
+  push:
+    branches: ['fix/clang-tidy-zero-warnings']
+    paths: ['.github/workflows/tidy-autofix.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  autofix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CC: clang-21
+      CXX: clang++-21
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/clang-tidy-zero-warnings
+          persist-credentials: true
+      - name: Install LLVM 21, CMake and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg ca-certificates ninja-build pkg-config libicu-dev libfreetype-dev libharfbuzz-dev fonts-dejavu-core
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm21.list
+          sudo apt-get update
+          sudo apt-get install -y clang-21 clang-tidy-21 clang-format-21 lld-21
+          python3 -m pip install --break-system-packages 'cmake>=4.4,<5' tinycss2 cssselect2
+      - name: Configure and build Modules for tidy
+        run: |
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++-21 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=ON -DARCADE_UI_ENABLE_UNICODE=ON -DARCADE_UI_ENABLE_FONT_BACKEND=ON
+          cmake --build build/native --parallel 2
+      - name: Apply clang-tidy automatic corrections
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess
+          root=pathlib.Path.cwd()
+          db=json.loads((root/'build/native/compile_commands.json').read_text())
+          paths=sorted({pathlib.Path(x['file']).resolve() for x in db
+                        if pathlib.Path(x['file']).resolve().is_relative_to(root/'src')
+                        or pathlib.Path(x['file']).resolve().is_relative_to(root/'tests')})
+          for path in paths:
+              print('Tidy fixes:',path.relative_to(root),flush=True)
+              try:
+                  r=subprocess.run(['clang-tidy-21','-p','build/native','--fix','--quiet',str(path)],
+                      text=True,capture_output=True,timeout=45)
+                  if r.returncode:
+                      print('Analyzer returned',r.returncode, r.stderr[-500:])
+              except subprocess.TimeoutExpired:
+                  print('Timed out:',path.relative_to(root))
+          PY
+          python3 tools/clang-format-all.py --fix --binary clang-format-21
+      - name: Validate generated source builds and tests
+        shell: bash
+        run: |
+          cmake --build build/native --parallel 2
+          ctest --test-dir build/native --output-on-failure --parallel 2
+      - name: Commit verified fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- src tests
+          if git diff --cached --quiet; then
+            echo "No automatic fixes available"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'refactor(tidy): apply verified automatic C++ fixes'
+          git push origin HEAD:fix/clang-tidy-zero-warnings
+      - name: Upload patch on failure
+        if: failure()
+        run: git diff -- src tests > /tmp/tidy-fixes.patch
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: tidy-fixes-recovery
+          path: /tmp/tidy-fixes.patch
+          if-no-files-found: ignore
