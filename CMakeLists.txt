@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.5.0)
-project(ArcadeUI VERSION 1.1.0 LANGUAGES CXX)
+project(ArcadeUI VERSION 1.2.0 LANGUAGES CXX)
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "Clang required")
 endif()
@@ -93,4 +93,21 @@ if(BUILD_TESTING)
     target_link_libraries(arcadeui_text_line_tests PRIVATE arcade_ui)
     add_dependencies(arcadeui_text_line_tests arcuxi_text_intrinsics)
     add_test(NAME runtime_text_lines COMMAND arcadeui_text_line_tests "${TEXT_INTRINSIC_BINARY}")
+endif()
+
+# v1.2: tests that the computed grid-track width affects text row height.
+if(BUILD_TESTING)
+    set(TEXT_ROWS_BINARY "${CMAKE_CURRENT_BINARY_DIR}/text_layout_rows.arcuxi")
+    add_custom_command(OUTPUT "${TEXT_ROWS_BINARY}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/examples/text_layout_rows.html" -o "${TEXT_ROWS_BINARY}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/arcuxc.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples/text_layout_rows.html"
+        VERBATIM)
+    add_custom_target(arcuxi_text_rows DEPENDS "${TEXT_ROWS_BINARY}")
+    add_executable(arcadeui_text_geometry_tests tests/text_constrained_geometry.cpp)
+    target_compile_options(arcadeui_text_geometry_tests PRIVATE -std=c++2d -Wall -Wextra -Wpedantic)
+    target_link_libraries(arcadeui_text_geometry_tests PRIVATE arcade_ui)
+    add_dependencies(arcadeui_text_geometry_tests arcuxi_text_rows)
+    add_test(NAME runtime_text_geometry COMMAND arcadeui_text_geometry_tests "${TEXT_ROWS_BINARY}")
 endif()

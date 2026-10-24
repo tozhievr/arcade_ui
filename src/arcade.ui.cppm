@@ -83,6 +83,7 @@ export namespace arcade::ui {
         TextMeasure text_measurer_{};
         TextLineMeasure line_measurer_{};
         void* text_measurer_context_{};
+        void* line_measurer_context_{};
         LayoutStats stats_{};
         bool laid_out_{};
         bool paint_dirty_{true};
@@ -174,6 +175,24 @@ export namespace arcade::ui {
             }
             intrinsic_valid_[id]=1;intrinsic_text_[id]=value;
             return value;
+        }
+        // Intrinsic block contribution after assigning a definite inline size.
+        // Only text-only leaves are handled at this stage. Rich inline formatting
+        // and fragment trees will require a separate inline formatting context.
+        [[nodiscard]] float constrained_height(std::uint32_t id,float outer_width) {
+            const auto& n=nodes_[id];
+            const auto& s=styles_[n.style];
+            if(n.child_count || n.text_size==0 || s.height>=0.f)
+                return measure(id,false);
+            const float inline_size=std::max(0.f,outer_width-2.f*s.padding);
+            const auto str=text(n.text_offset,n.text_size);
+            auto lines=line_measurer_ ? line_measurer_(line_measurer_context_,str,s.font_size,inline_size)
+                                      : approximate_lines(text_intrinsic(id),inline_size);
+            if(!std::isfinite(lines.width)||!std::isfinite(lines.height) ||
+               lines.width<0 || lines.height<=0 || lines.width>inline_size+0.01f ||
+               lines.line_count==0)
+                throw std::runtime_error("Invalid line metrics during layout");
+            return lines.height+2.f*s.padding;
         }
         [[nodiscard]] float measure(std::uint32_t id,bool horizontal) {
             const auto bit=horizontal?std::uint8_t{1}:std::uint8_t{2};
@@ -278,7 +297,12 @@ export namespace arcade::ui {
                 std::vector<float> heights(row_count,0.f),ys(row_count,area.y+pad);
                 for(const auto& p:placements){
                     const auto& cs=styles_[nodes_[p.child].style];
-                    heights[p.row]=std::max(heights[p.row],measure(p.child,false)+2*cs.margin);
+                    float assigned=0.f;
+                    for(std::uint32_t c=p.col;c<p.col+p.span;++c)assigned+=widths[c];
+                    assigned+=s.gap*float(p.span-1);
+                    assigned=clamp_width(cs.width>=0?cs.width:std::max(0.f,assigned-2*cs.margin),cs);
+                    heights[p.row]=std::max(heights[p.row],
+                        constrained_height(p.child,assigned)+2*cs.margin);
                 }
                 for(std::uint32_t r=1;r<row_count;++r)ys[r]=ys[r-1]+heights[r-1]+s.gap;
                 for(const auto& p:placements){
@@ -364,6 +388,14 @@ export namespace arcade::ui {
                     }
                     if(!did_freeze)break;
                 }
+                if(horizontal) {
+                    line_cross=0.f;
+                    for(const auto& item:items) {
+                        const auto& child_style=styles_[nodes_[item.id].style];
+                        line_cross=std::max(line_cross,
+                            constrained_height(item.id,item.target)+2*child_style.margin);
+                    }
+                }
                 float used=total_gaps;
                 for(const auto& item:items){
                     used+=item.target+2*styles_[nodes_[item.id].style].margin;
@@ -381,7 +413,8 @@ export namespace arcade::ui {
                     const auto child=item.id;
                     const auto& cs=styles_[nodes_[child].style];
                     const float main=item.target;
-                    const float preferred_cross=measure(child,!horizontal);
+                    const float preferred_cross=horizontal ? constrained_height(child,main)
+                                                           : measure(child,!horizontal);
                     const float available_cross=std::max(0.f,cross_space-2*cs.margin);
                     const float cross=s.align==0?available_cross:std::min(available_cross,preferred_cross);
                     float cross_offset=0.f;
@@ -489,9 +522,9 @@ export namespace arcade::ui {
         }
         void set_line_measurer(TextLineMeasure callback,void* context=nullptr){
             line_measurer_=callback;
-            // Both measurement callbacks intentionally share a context;
-            // change either callback atomically when replacing the backend.
-            text_measurer_context_=context;
+            // Independent contexts: replacing the line breaker must not
+            // invalidate the lifetime or configuration of the shaper.
+            line_measurer_context_=context;
             if(!nodes_.empty())std::fill(dirty_.begin(),dirty_.end(),1);
             std::fill(measure_valid_.begin(),measure_valid_.end(),0);
             paint_dirty_=true;
@@ -502,11 +535,12 @@ export namespace arcade::ui {
             const auto& n=nodes_[id];
             const auto font_size=styles_[n.style].font_size;
             const auto str=text(n.text_offset,n.text_size);
-            auto result=line_measurer_?line_measurer_(text_measurer_context_,str,font_size,width)
+            auto result=line_measurer_?line_measurer_(line_measurer_context_,str,font_size,width)
                 :approximate_lines(text_intrinsic(id),width);
             if(!std::isfinite(result.width)||!std::isfinite(result.height)
                 ||result.width<0||result.height<0||result.width>width+0.01f
-                ||result.line_count==0)throw std::runtime_error("Invalid line measurement");
+                ||result.line_count==0 || (result.height==0.f && !str.empty()))
+                throw std::runtime_error("Invalid line measurement");
             return result;
         }
         [[nodiscard]] TextIntrinsic intrinsic_text(std::uint32_t id){
